@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Culler v2</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-row">
+        <span class="logo-icon">🎧</span>
+        <h1 class="logo-title">Culler</h1>
+        <span class="badge">v2.0</span>
+      </div>
+      <button id="btn-settings" class="icon-btn" title="Settings">⚙️</button>
+    </header>
+
+    <!-- Settings Pane (Collapsible) -->
+    <section id="settings-pane" class="card settings-card hidden">
+      <h3>API Configuration</h3>
+      <label for="input-api-key">Gemini API Key</label>
+      <input type="password" id="input-api-key" placeholder="AIzaSy...">
+      <div class="btn-group">
+        <button id="btn-save-key" class="btn btn-primary">Save Key</button>
+        <button id="btn-close-settings" class="btn btn-secondary">Close</button>
+      </div>
+    </section>
+
+    <!-- Playlist Status Card -->
+    <section class="card playlist-card">
+      <div class="card-header">
+        <span class="section-label">Active Playlist</span>
+        <span id="playlist-status-tag" class="status-tag status-idle">Not Connected</span>
+      </div>
+      <h2 id="playlist-name" class="playlist-title">Open a Spotify playlist...</h2>
+      <p id="playlist-track-count" class="track-count">0 tracks captured</p>
+    </section>
+
+    <!-- Session Controller Card -->
+    <section class="card session-card">
+      <div class="card-header">
+        <span class="section-label">Telemetry Session</span>
+      </div>
+      <div class="session-stats">
+        <div class="stat-box">
+          <span class="stat-value" id="stat-skips">0</span>
+          <span class="stat-label">Skips (&lt;20%)</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-value" id="stat-keeps">0</span>
+          <span class="stat-label">Keeps (&gt;65%)</span>
+        </div>
+      </div>
+      <div class="session-controls">
+        <button id="btn-toggle-session" class="btn btn-accent full-width">Start Culling Session</button>
+      </div>
+    </section>
+
+    <!-- AI Actions Card -->
+    <section class="card actions-card">
+      <div class="btn-group">
+        <button id="btn-predict" class="btn btn-primary full-width">Run Skip Predictions</button>
+        <button id="btn-calibrate" class="btn btn-secondary full-width">Calibrate Heuristics</button>
+      </div>
+      <div id="ai-loading" class="loading-state hidden">
+        <div class="spinner"></div>
+        <span id="loading-msg">Consulting Gemini...</span>
+      </div>
+    </section>
+
+    <!-- Cull Report Checklist Card -->
+    <section id="cull-report-card" class="card report-card hidden">
+      <div class="card-header">
+        <span class="section-label">Predicted Skips</span>
+        <div class="export-actions">
+          <button id="btn-export-csv" class="btn-sm" title="Export CSV">📄 CSV</button>
+          <button id="btn-export-md" class="btn-sm" title="Copy Markdown">📋 MD</button>
+        </div>
+      </div>
+      <div id="checklist-container" class="checklist-container">
+        <!-- Dynamically rendered track items -->
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
