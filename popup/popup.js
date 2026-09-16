@@ -44,6 +44,17 @@ async function init() {
   await loadSessionState();
   await loadCullReport();
   setupEventListeners();
+  setupStorageListener();
+}
+
+function setupStorageListener() {
+  // Auto-refresh playlist status whenever background.js updates storage
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    if (changes.culler_current_playlist) loadPlaylistState();
+    if (changes.culler_active_session) loadSessionState();
+    if (changes.culler_latest_cull_report) loadCullReport();
+  });
 }
 
 async function loadSettings() {

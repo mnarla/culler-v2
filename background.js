@@ -7,6 +7,7 @@
 
 import { generateContent } from './lib/gemini.js';
 import { buildBatchScoringPrompt, buildCalibrationPrompt } from './lib/heuristics.js';
+import { parsePathfinderPlaylistPayload, mergePlaylistBatches } from './lib/parser.js';
 import {
   getApiKey,
   getActiveModel,
@@ -91,13 +92,29 @@ async function onTrackPlaybackEvent(event) {
 }
 
 async function onPlaylistIntercepted(rawPayload, authHeader) {
-  // Store raw payload temporarily until parser.js is integrated in next step
+  const batch = parsePathfinderPlaylistPayload(rawPayload);
+
+  if (batch.schemaMismatch) {
+    console.warn('[Culler Background] Pathfinder schema mismatch — stored raw payload for inspection.', batch.warnings);
+    // Store raw so developers can inspect what changed
+    await setCurrentPlaylist({ rawPayload, schemaError: batch.warnings, updatedAt: Date.now() });
+    return { success: false, schemaMismatch: true, warnings: batch.warnings };
+  }
+
+  // Merge with any existing batches from earlier pagination responses
+  const existing = await getCurrentPlaylist();
+  const merged = (existing && existing.tracks && existing.playlistId === batch.playlistId)
+    ? mergePlaylistBatches(existing, batch)
+    : batch;
+
   await setCurrentPlaylist({
-    rawPayload: rawPayload,
-    authHeader: authHeader,
+    ...merged,
+    authHeader,
     updatedAt: Date.now(),
   });
-  return { success: true };
+
+  console.log(`[Culler Background] Playlist "${merged.playlistName}" — ${merged.tracks.length} tracks parsed, ${merged.skippedRows} skipped rows.`);
+  return { success: true, trackCount: merged.tracks.length, playlistName: merged.playlistName };
 }
 
 // ── Gemini AI Actions ────────────────────────────────────────────────────────
