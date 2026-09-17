@@ -21,6 +21,9 @@ const btnCloseSettings = document.getElementById('btn-close-settings');
 const playlistStatusTag = document.getElementById('playlist-status-tag');
 const playlistNameEl = document.getElementById('playlist-name');
 const playlistTrackCountEl = document.getElementById('playlist-track-count');
+const btnFetchAll = document.getElementById('btn-fetch-all');
+const paginationProgressBar = document.getElementById('pagination-progress-bar');
+const paginationProgressFill = document.getElementById('pagination-progress-fill');
 
 const statSkipsEl = document.getElementById('stat-skips');
 const statKeepsEl = document.getElementById('stat-keeps');
@@ -45,6 +48,7 @@ async function init() {
   await loadCullReport();
   setupEventListeners();
   setupStorageListener();
+  setupRuntimeMessageListener();
 }
 
 function setupStorageListener() {
@@ -54,6 +58,31 @@ function setupStorageListener() {
     if (changes.culler_current_playlist) loadPlaylistState();
     if (changes.culler_active_session) loadSessionState();
     if (changes.culler_latest_cull_report) loadCullReport();
+  });
+}
+
+function setupRuntimeMessageListener() {
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'CULLER_PAGINATION_PROGRESS') {
+      const pct = Math.round((msg.currentOffset / msg.totalExpected) * 100);
+      paginationProgressBar.classList.remove('hidden');
+      paginationProgressFill.style.width = `${pct}%`;
+      btnFetchAll.textContent = `Fetching (${msg.currentOffset}/${msg.totalExpected})...`;
+    } else if (msg.type === 'CULLER_PAGINATION_COMPLETE') {
+      paginationProgressFill.style.width = '100%';
+      setTimeout(() => {
+        paginationProgressBar.classList.add('hidden');
+        loadPlaylistState();
+      }, 500);
+    } else if (msg.type === 'CULLER_PAGINATION_ERROR') {
+      alert(`Pagination error: ${msg.error}`);
+      btnFetchAll.disabled = false;
+      loadPlaylistState();
+    } else if (msg.type === 'CULLER_AUTH_EXPIRED') {
+      alert(`Spotify session token expired at track #${msg.offset || 'unknown'}. Please scroll slightly in Spotify or refresh the tab to renew the token.`);
+      btnFetchAll.disabled = false;
+      loadPlaylistState();
+    }
   });
 }
 
@@ -71,17 +100,35 @@ async function loadPlaylistState() {
   const playlist = await getCurrentPlaylist();
   const name = playlist?.name || playlist?.playlistName;
   const count = playlist?.tracks ? playlist.tracks.length : 0;
+  const total = playlist?.totalExpected || null;
 
   if (playlist && (name || count > 0)) {
     playlistStatusTag.textContent = count > 0 ? 'Active' : 'Connecting';
     playlistStatusTag.className = 'status-tag status-active';
     playlistNameEl.textContent = name || 'Active Playlist';
-    playlistTrackCountEl.textContent = `${count} tracks captured`;
+
+    if (total && total > 0) {
+      playlistTrackCountEl.textContent = `${count} / ${total} tracks captured`;
+      if (count < total) {
+        btnFetchAll.classList.remove('hidden');
+        btnFetchAll.textContent = `Fetch All (${total}) ⚡`;
+        btnFetchAll.disabled = false;
+      } else {
+        btnFetchAll.classList.remove('hidden');
+        btnFetchAll.textContent = `All ${total} tracks loaded ✓`;
+        btnFetchAll.disabled = true;
+        paginationProgressBar.classList.add('hidden');
+      }
+    } else {
+      playlistTrackCountEl.textContent = `${count} tracks captured`;
+      btnFetchAll.classList.add('hidden');
+    }
   } else {
     playlistStatusTag.textContent = 'Not Connected';
     playlistStatusTag.className = 'status-tag status-idle';
     playlistNameEl.textContent = 'Open a Spotify playlist...';
     playlistTrackCountEl.textContent = '0 tracks captured';
+    btnFetchAll.classList.add('hidden');
   }
 }
 
@@ -130,6 +177,33 @@ function setupEventListeners() {
     await setApiKey(key);
     settingsPane.classList.add('hidden');
     alert('API key saved successfully.');
+  });
+
+  // Fetch full playlist auto-pagination
+  btnFetchAll.addEventListener('click', async () => {
+    const playlist = await getCurrentPlaylist();
+    const count = playlist?.tracks ? playlist.tracks.length : 0;
+    const total = playlist?.totalExpected || 0;
+
+    if (count >= total || total === 0) return;
+
+    btnFetchAll.disabled = true;
+    btnFetchAll.textContent = 'Fetching...';
+    paginationProgressBar.classList.remove('hidden');
+    paginationProgressFill.style.width = `${Math.round((count / total) * 100)}%`;
+
+    chrome.runtime.sendMessage({
+      type: 'CULLER_FETCH_FULL_PLAYLIST',
+      startOffset: count,
+      totalExpected: total,
+    }, (res) => {
+      if (chrome.runtime.lastError || (res && res.error)) {
+        const errMsg = chrome.runtime.lastError?.message || res?.error;
+        alert(`Fetch notice: ${errMsg}`);
+        btnFetchAll.disabled = false;
+        btnFetchAll.textContent = `Fetch All (${total}) ⚡`;
+      }
+    });
   });
 
   // Session start/stop

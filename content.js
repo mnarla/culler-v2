@@ -19,13 +19,32 @@ window.addEventListener('message', (event) => {
       type: 'CULLER_INTERCEPTED_PLAYLIST',
       payload: event.data.payload,
       authHeader: event.data.authHeader,
-    }).catch(() => {
-      // Service worker might be sleeping
-    });
+    }).catch(() => {});
   } else if (event.data.type === 'CULLER_AUTH_EXPIRED') {
     chrome.runtime.sendMessage({
       type: 'CULLER_AUTH_EXPIRED',
     }).catch(() => {});
+  } else if (
+    event.data.type === 'CULLER_PAGINATION_PROGRESS' ||
+    event.data.type === 'CULLER_PAGINATION_COMPLETE' ||
+    event.data.type === 'CULLER_PAGINATION_ERROR'
+  ) {
+    chrome.runtime.sendMessage(event.data).catch(() => {});
+  }
+});
+
+// Listen for pagination commands from background or popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'CULLER_START_PAGINATION') {
+    window.postMessage({
+      type: 'CULLER_TRIGGER_PAGINATION',
+      startOffset: message.startOffset,
+      totalExpected: message.totalExpected,
+    }, '*');
+    sendResponse({ status: 'started' });
+  } else if (message.type === 'CULLER_STOP_PAGINATION') {
+    window.postMessage({ type: 'CULLER_ABORT_PAGINATION' }, '*');
+    sendResponse({ status: 'stopped' });
   }
 });
 

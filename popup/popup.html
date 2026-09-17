@@ -36,7 +36,13 @@
         <span id="playlist-status-tag" class="status-tag status-idle">Not Connected</span>
       </div>
       <h2 id="playlist-name" class="playlist-title">Open a Spotify playlist...</h2>
-      <p id="playlist-track-count" class="track-count">0 tracks captured</p>
+      <div class="track-count-row">
+        <p id="playlist-track-count" class="track-count">0 tracks captured</p>
+        <button id="btn-fetch-all" class="btn btn-xs btn-accent hidden">Fetch All ⚡</button>
+      </div>
+      <div id="pagination-progress-bar" class="progress-bar-container hidden">
+        <div id="pagination-progress-fill" class="progress-bar-fill"></div>
+      </div>
     </section>
 
     <!-- Session Controller Card -->

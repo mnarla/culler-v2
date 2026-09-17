@@ -54,9 +54,34 @@ async function handleMessage(message, sender) {
     case 'CULLER_RUN_CALIBRATION':
       return onRunCalibration();
 
+    case 'CULLER_FETCH_FULL_PLAYLIST':
+      return onFetchFullPlaylist(message.startOffset, message.totalExpected);
+
     default:
       return { status: 'unknown_message_type' };
   }
+}
+
+async function onFetchFullPlaylist(startOffset, totalExpected) {
+  const tabs = await chrome.tabs.query({ url: '*://open.spotify.com/*' });
+  if (!tabs || tabs.length === 0) {
+    throw new Error('No open Spotify tab found.');
+  }
+
+  const activeTab = tabs.find(t => t.active) || tabs[0];
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(activeTab.id, {
+      type: 'CULLER_START_PAGINATION',
+      startOffset,
+      totalExpected,
+    }, (res) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve(res);
+      }
+    });
+  });
 }
 
 // ── Session Event Handlers ───────────────────────────────────────────────────
