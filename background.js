@@ -297,9 +297,14 @@ async function onRunBatchPredictions() {
 
   // Normalize confidence and tier
   normalizedSkips.forEach(s => {
-    s.confidence = Number(s.confidence) || 70;
-    if (!s.tier) {
-      s.tier = s.confidence >= 80 ? 'HIGH' : 'MODERATE';
+    s.confidence = Number(s.confidence) || 60;
+    const rawTier = s.tier ? String(s.tier).toUpperCase().replace(/\s+/g, '-') : '';
+    if (rawTier.includes('HIGH') || (!s.tier && s.confidence >= 80)) {
+      s.tier = 'HIGH';
+    } else if (rawTier.includes('MOD') || (!s.tier && s.confidence >= 60)) {
+      s.tier = 'MODERATE';
+    } else {
+      s.tier = 'WORTH-REVIEWING';
     }
   });
 

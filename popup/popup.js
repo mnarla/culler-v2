@@ -325,7 +325,7 @@ function setupEventListeners() {
     let csvContent = 'data:text/csv;charset=utf-8,Position,Track,Artist,Confidence,Tier,Reason\n';
     report.predictions.forEach(p => {
       const reason = (p.reason || '').replace(/"/g, '""');
-      const tier = p.tier || (p.confidence >= 80 ? 'HIGH' : 'MODERATE');
+      const tier = p.tier || (p.confidence >= 80 ? 'HIGH' : (p.confidence >= 60 ? 'MODERATE' : 'WORTH-REVIEWING'));
       csvContent += `${p.originalIndex},"${p.name}","${p.artist}",${p.confidence}%,${tier},"${reason}"\n`;
     });
 
@@ -347,7 +347,7 @@ function setupEventListeners() {
     md += '| # | Track | Artist | Confidence | Tier | Reason |\n';
     md += '|---|-------|--------|------------|------|--------|\n';
     report.predictions.forEach(p => {
-      const tier = p.tier || (p.confidence >= 80 ? 'HIGH' : 'MODERATE');
+      const tier = p.tier || (p.confidence >= 80 ? 'HIGH' : (p.confidence >= 60 ? 'MODERATE' : 'WORTH-REVIEWING'));
       md += `| ${p.originalIndex} | ${p.name} | ${p.artist} | ${p.confidence}% | ${tier} | ${p.reason} |\n`;
     });
 
@@ -417,9 +417,20 @@ function renderChecklist(predictions) {
     const el = document.createElement('div');
     el.className = `checklist-item ${item.checked ? 'removed' : ''}`;
 
-    const isHigh = item.tier === 'HIGH' || (!item.tier && item.confidence >= 80);
-    const tierClass = isHigh ? 'badge-tier-high' : 'badge-tier-mod';
-    const tierLabel = isHigh ? 'HIGH' : 'MODERATE';
+    let tierClass = 'badge-tier-mod';
+    let tierLabel = 'MODERATE';
+    const rawTier = item.tier ? String(item.tier).toUpperCase() : '';
+
+    if (rawTier.includes('HIGH') || (!item.tier && item.confidence >= 80)) {
+      tierClass = 'badge-tier-high';
+      tierLabel = 'HIGH';
+    } else if (rawTier.includes('REVIEW') || rawTier.includes('LOW') || (!item.tier && item.confidence < 60)) {
+      tierClass = 'badge-tier-review';
+      tierLabel = 'WORTH REVIEWING';
+    } else {
+      tierClass = 'badge-tier-mod';
+      tierLabel = 'MODERATE';
+    }
 
     el.innerHTML = `
       <input type="checkbox" id="check-${index}" ${item.checked ? 'checked' : ''}>
