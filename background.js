@@ -48,6 +48,9 @@ async function handleMessage(message, sender) {
     case 'CULLER_STOP_SESSION':
       return onStopSession();
 
+    case 'CULLER_STOP_AND_GENERATE':
+      return onStopAndGenerate();
+
     case 'CULLER_TRACK_PLAYBACK_EVENT':
       return onTrackPlaybackEvent(message.event);
 
@@ -230,6 +233,17 @@ async function onRunBatchPredictions() {
     return !culledSet.has(key) && !keptSet.has(key);
   });
 
+  // Normalize confidence and tier
+  normalizedSkips.forEach(s => {
+    s.confidence = Number(s.confidence) || 70;
+    if (!s.tier) {
+      s.tier = s.confidence >= 80 ? 'HIGH' : 'MODERATE';
+    }
+  });
+
+  // Sort descending by confidence
+  normalizedSkips.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+
   await setCullReport({
     playlistName: playlistTitle,
     timestamp: Date.now(),
@@ -237,6 +251,36 @@ async function onRunBatchPredictions() {
   });
 
   return { success: true, predictions: normalizedSkips };
+}
+
+async function onStopAndGenerate() {
+  const session = await getActiveSession();
+  let calibrated = false;
+
+  // 1. If we have listening session telemetry or review overrides, calibrate heuristics first
+  if (session && session.events && session.events.length > 0) {
+    try {
+      await onRunCalibration();
+      calibrated = true;
+    } catch (calErr) {
+      console.warn('[Culler Background] Auto-calibration skipped/warned:', calErr.message);
+    }
+  }
+
+  // 2. Stop the session
+  if (session) {
+    session.isActive = false;
+    await setActiveSession(session);
+  }
+
+  // 3. Run batch predictions with freshly calibrated or fallback rules
+  const predResult = await onRunBatchPredictions();
+
+  return {
+    success: true,
+    calibrated,
+    predictions: predResult.predictions || [],
+  };
 }
 
 async function onRunCalibration() {

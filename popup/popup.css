@@ -339,6 +339,69 @@ input[type="text"]:focus {
   margin-top: 2px;
 }
 
+/* Badges & Tiers */
+.badge-tier-high {
+  background-color: rgba(30, 215, 96, 0.15);
+  color: #1ed760;
+  border: 1px solid rgba(30, 215, 96, 0.3);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+  display: inline-block;
+}
+
+.badge-tier-mod {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+  display: inline-block;
+}
+
+.report-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.pagination-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.btn-magic {
+  background: linear-gradient(135deg, #1ed760 0%, #15803d 100%);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(30, 215, 96, 0.35);
+  border: none;
+  animation: pulse-glow 2.5s infinite;
+}
+
+.btn-magic:hover {
+  background: linear-gradient(135deg, #22c55e 0%, #166534 100%);
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(30, 215, 96, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(30, 215, 96, 0.6);
+  }
+}
+
 /* Helpers */
 .hidden {
   display: none !important;
@@ -365,3 +428,4 @@ input[type="text"]:focus {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+

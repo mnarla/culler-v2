@@ -28,16 +28,23 @@ const paginationProgressFill = document.getElementById('pagination-progress-fill
 const statSkipsEl = document.getElementById('stat-skips');
 const statKeepsEl = document.getElementById('stat-keeps');
 const btnToggleSession = document.getElementById('btn-toggle-session');
+const btnQuickScan = document.getElementById('btn-quick-scan');
 
-const btnPredict = document.getElementById('btn-predict');
-const btnCalibrate = document.getElementById('btn-calibrate');
 const aiLoading = document.getElementById('ai-loading');
 const loadingMsg = document.getElementById('loading-msg');
 
 const cullReportCard = document.getElementById('cull-report-card');
+const reportTitleLabel = document.getElementById('report-title-label');
+const reportPageInfo = document.getElementById('report-page-info');
 const checklistContainer = document.getElementById('checklist-container');
+const paginationControls = document.getElementById('pagination-controls');
+const btnShowMore = document.getElementById('btn-show-more');
+const btnShowAll = document.getElementById('btn-show-all');
 const btnExportCsv = document.getElementById('btn-export-csv');
 const btnExportMd = document.getElementById('btn-export-md');
+
+const PAGE_SIZE = 15;
+let currentVisibleLimit = PAGE_SIZE;
 
 // ── State Initialization ─────────────────────────────────────────────────────
 
@@ -134,29 +141,30 @@ async function loadPlaylistState() {
 
 async function loadSessionState() {
   const session = await getActiveSession();
-  if (session && session.isActive) {
-    btnToggleSession.textContent = 'Stop Culling Session';
-    btnToggleSession.className = 'btn btn-danger full-width';
-  } else {
-    btnToggleSession.textContent = 'Start Culling Session';
-    btnToggleSession.className = 'btn btn-accent full-width';
-  }
-
   const events = (session && session.events) || [];
   const skips = events.filter(e => e.event === 'SKIP').length;
   const keeps = events.filter(e => e.event === 'KEEP').length;
 
   statSkipsEl.textContent = skips;
   statKeepsEl.textContent = keeps;
+
+  if (session && session.isActive) {
+    btnToggleSession.textContent = `✨ Stop & Generate Cull List (${skips} skips, ${keeps} keeps)`;
+    btnToggleSession.className = 'btn btn-magic full-width';
+    if (btnQuickScan) btnQuickScan.classList.add('hidden');
+  } else {
+    btnToggleSession.textContent = 'Start Culling Session 🎧';
+    btnToggleSession.className = 'btn btn-accent full-width';
+    if (btnQuickScan) btnQuickScan.classList.remove('hidden');
+  }
 }
 
 async function loadCullReport() {
   const report = await getCullReport();
   if (report && report.predictions && report.predictions.length > 0) {
     cullReportCard.classList.remove('hidden');
-    const titleLabel = document.getElementById('report-title-label');
-    if (titleLabel) {
-      titleLabel.textContent = `Predicted Skips (${report.predictions.length})`;
+    if (reportTitleLabel) {
+      reportTitleLabel.textContent = `Predicted Skips (${report.predictions.length})`;
     }
     renderChecklist(report.predictions);
   } else {
@@ -210,12 +218,25 @@ function setupEventListeners() {
     });
   });
 
-  // Session start/stop
+  // Master Action Button (Start Session -> Stop & Generate)
   btnToggleSession.addEventListener('click', async () => {
     const session = await getActiveSession();
     if (session && session.isActive) {
-      chrome.runtime.sendMessage({ type: 'CULLER_STOP_SESSION' }, () => {
-        loadSessionState();
+      setLoading(true, 'Stopping session & analyzing listening telemetry with Gemini...');
+      chrome.runtime.sendMessage({ type: 'CULLER_STOP_AND_GENERATE' }, (res) => {
+        setLoading(false);
+        if (chrome.runtime.lastError || (res && res.error)) {
+          const errMsg = chrome.runtime.lastError?.message || res?.error;
+          alert(`Analysis Error: ${errMsg}`);
+        } else {
+          const count = Array.isArray(res?.predictions) ? res.predictions.length : 0;
+          if (count === 0) {
+            alert('Gemini evaluated your unreviewed tracks and found zero skips! Your playlist matches your listening taste.');
+          }
+          currentVisibleLimit = PAGE_SIZE; // reset pagination to top page
+          loadSessionState();
+          loadCullReport();
+        }
       });
     } else {
       const playlist = await getCurrentPlaylist();
@@ -229,45 +250,59 @@ function setupEventListeners() {
     }
   });
 
-  // Run predictions
-  btnPredict.addEventListener('click', async () => {
-    setLoading(true, 'Predicting skips with Gemini...');
-    chrome.runtime.sendMessage({ type: 'CULLER_RUN_BATCH_PREDICTIONS' }, (res) => {
-      setLoading(false);
-      if (res && res.error) {
-        alert(`Prediction Error: ${res.error}`);
-      } else {
-        const count = Array.isArray(res?.predictions) ? res.predictions.length : 0;
-        if (count === 0) {
-          alert('Gemini evaluated all tracks and did not find any skips based on current rules. Your playlist is clean!');
+  // Direct Playlist Scan (No Session required)
+  if (btnQuickScan) {
+    btnQuickScan.addEventListener('click', async () => {
+      setLoading(true, 'Scanning unreviewed tracks for skips with Gemini...');
+      chrome.runtime.sendMessage({ type: 'CULLER_RUN_BATCH_PREDICTIONS' }, (res) => {
+        setLoading(false);
+        if (chrome.runtime.lastError || (res && res.error)) {
+          const errMsg = chrome.runtime.lastError?.message || res?.error;
+          alert(`Scan Error: ${errMsg}`);
+        } else {
+          const count = Array.isArray(res?.predictions) ? res.predictions.length : 0;
+          if (count === 0) {
+            alert('Gemini evaluated all tracks and did not find any skips based on current rules.');
+          }
+          currentVisibleLimit = PAGE_SIZE;
+          loadCullReport();
         }
-        loadCullReport();
+      });
+    });
+  }
+
+  // Progressive Pagination: Show More
+  if (btnShowMore) {
+    btnShowMore.addEventListener('click', async () => {
+      currentVisibleLimit += PAGE_SIZE;
+      const report = await getCullReport();
+      if (report && report.predictions) {
+        renderChecklist(report.predictions);
       }
     });
-  });
+  }
 
-  // Run calibration
-  btnCalibrate.addEventListener('click', async () => {
-    setLoading(true, 'Calibrating heuristics with Gemini...');
-    chrome.runtime.sendMessage({ type: 'CULLER_RUN_CALIBRATION' }, (res) => {
-      setLoading(false);
-      if (res && res.error) {
-        alert(`Calibration Error: ${res.error}`);
-      } else {
-        alert('Heuristics successfully calibrated against your listening session!');
+  // Progressive Pagination: Show All
+  if (btnShowAll) {
+    btnShowAll.addEventListener('click', async () => {
+      currentVisibleLimit = Infinity;
+      const report = await getCullReport();
+      if (report && report.predictions) {
+        renderChecklist(report.predictions);
       }
     });
-  });
+  }
 
-  // Export CSV
+  // Export CSV (Full Dataset)
   btnExportCsv.addEventListener('click', async () => {
     const report = await getCullReport();
     if (!report || !report.predictions) return;
 
-    let csvContent = 'data:text/csv;charset=utf-8,Position,Track,Artist,Confidence,Reason\n';
+    let csvContent = 'data:text/csv;charset=utf-8,Position,Track,Artist,Confidence,Tier,Reason\n';
     report.predictions.forEach(p => {
       const reason = (p.reason || '').replace(/"/g, '""');
-      csvContent += `${p.originalIndex},"${p.name}","${p.artist}",${p.confidence}%,"${reason}"\n`;
+      const tier = p.tier || (p.confidence >= 80 ? 'HIGH' : 'MODERATE');
+      csvContent += `${p.originalIndex},"${p.name}","${p.artist}",${p.confidence}%,${tier},"${reason}"\n`;
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -279,20 +314,21 @@ function setupEventListeners() {
     document.body.removeChild(link);
   });
 
-  // Copy Markdown
+  // Copy Markdown (Full Dataset)
   btnExportMd.addEventListener('click', async () => {
     const report = await getCullReport();
     if (!report || !report.predictions) return;
 
     let md = `# Culler Report — ${report.playlistName || 'Playlist'}\n\n`;
-    md += '| # | Track | Artist | Confidence | Reason |\n';
-    md += '|---|-------|--------|------------|--------|\n';
+    md += '| # | Track | Artist | Confidence | Tier | Reason |\n';
+    md += '|---|-------|--------|------------|------|--------|\n';
     report.predictions.forEach(p => {
-      md += `| ${p.originalIndex} | ${p.name} | ${p.artist} | ${p.confidence}% | ${p.reason} |\n`;
+      const tier = p.tier || (p.confidence >= 80 ? 'HIGH' : 'MODERATE');
+      md += `| ${p.originalIndex} | ${p.name} | ${p.artist} | ${p.confidence}% | ${tier} | ${p.reason} |\n`;
     });
 
     await navigator.clipboard.writeText(md);
-    alert('Report copied to clipboard as Markdown!');
+    alert('Full report copied to clipboard as Markdown!');
   });
 
   // Apply Review & Save Feedback
@@ -319,6 +355,7 @@ function setupEventListeners() {
           alert(`Error saving review: ${res.error}`);
         } else {
           alert(`Review applied! ${confirmed.length} tracks culled, and ${rejected.length} kept tracks saved as feedback to train Gemini.`);
+          currentVisibleLimit = PAGE_SIZE;
           loadCullReport();
         }
       });
@@ -330,23 +367,35 @@ function setLoading(isLoading, message = '') {
   if (isLoading) {
     aiLoading.classList.remove('hidden');
     loadingMsg.textContent = message;
-    btnPredict.disabled = true;
-    btnCalibrate.disabled = true;
+    btnToggleSession.disabled = true;
+    if (btnQuickScan) btnQuickScan.disabled = true;
   } else {
     aiLoading.classList.add('hidden');
-    btnPredict.disabled = false;
-    btnCalibrate.disabled = false;
+    btnToggleSession.disabled = false;
+    if (btnQuickScan) btnQuickScan.disabled = false;
   }
 }
 
-// ── Checklist Rendering & State Persistence ──────────────────────────────────
+// ── Checklist Rendering with Progressive Pagination ───────────────────────────
 
 function renderChecklist(predictions) {
   checklistContainer.innerHTML = '';
+  const total = predictions.length;
+  const visibleCount = Math.min(currentVisibleLimit, total);
 
-  predictions.forEach((item, index) => {
+  if (reportPageInfo) {
+    reportPageInfo.textContent = `Showing ${visibleCount} of ${total} skips`;
+  }
+
+  // Render visible slice
+  const visibleItems = predictions.slice(0, visibleCount);
+  visibleItems.forEach((item, index) => {
     const el = document.createElement('div');
     el.className = `checklist-item ${item.checked ? 'removed' : ''}`;
+
+    const isHigh = item.tier === 'HIGH' || (!item.tier && item.confidence >= 80);
+    const tierClass = isHigh ? 'badge-tier-high' : 'badge-tier-mod';
+    const tierLabel = isHigh ? 'HIGH' : 'MODERATE';
 
     el.innerHTML = `
       <input type="checkbox" id="check-${index}" ${item.checked ? 'checked' : ''}>
@@ -355,7 +404,10 @@ function renderChecklist(predictions) {
           <span>${item.name}</span>
           <span class="item-index">#${item.originalIndex}</span>
         </div>
-        <div class="item-reason">${item.artist} • ${item.reason}</div>
+        <div class="item-reason">
+          <span class="${tierClass}">${tierLabel} ${item.confidence}%</span>
+          ${item.artist} • ${item.reason}
+        </div>
       </div>
     `;
 
@@ -364,9 +416,9 @@ function renderChecklist(predictions) {
       item.checked = e.target.checked;
       el.classList.toggle('removed', item.checked);
 
-      // Persist checked state
+      // Persist checked state to full report
       const report = await getCullReport();
-      if (report && report.predictions) {
+      if (report && report.predictions && report.predictions[index]) {
         report.predictions[index].checked = item.checked;
         await setCullReport(report);
       }
@@ -374,6 +426,18 @@ function renderChecklist(predictions) {
 
     checklistContainer.appendChild(el);
   });
+
+  // Progressive pagination controls
+  if (paginationControls) {
+    if (visibleCount < total) {
+      paginationControls.classList.remove('hidden');
+      const remaining = total - visibleCount;
+      const nextBatch = Math.min(PAGE_SIZE, remaining);
+      btnShowMore.textContent = `▾ Show ${nextBatch} More (${remaining} remaining)`;
+    } else {
+      paginationControls.classList.add('hidden');
+    }
+  }
 }
 
 // Start

@@ -48,7 +48,7 @@
     <!-- Session Controller Card -->
     <section class="card session-card">
       <div class="card-header">
-        <span class="section-label">Telemetry Session</span>
+        <span class="section-label">Session Telemetry</span>
       </div>
       <div class="session-stats">
         <div class="stat-box">
@@ -61,15 +61,8 @@
         </div>
       </div>
       <div class="session-controls">
-        <button id="btn-toggle-session" class="btn btn-accent full-width">Start Culling Session</button>
-      </div>
-    </section>
-
-    <!-- AI Actions Card -->
-    <section class="card actions-card">
-      <div class="btn-group">
-        <button id="btn-predict" class="btn btn-primary full-width">Run Skip Predictions</button>
-        <button id="btn-calibrate" class="btn btn-secondary full-width">Calibrate Heuristics</button>
+        <button id="btn-toggle-session" class="btn btn-accent full-width">Start Culling Session 🎧</button>
+        <button id="btn-quick-scan" class="btn btn-secondary full-width" style="margin-top: 6px;">⚡ Scan Playlist Directly</button>
       </div>
       <div id="ai-loading" class="loading-state hidden">
         <div class="spinner"></div>
@@ -80,7 +73,10 @@
     <!-- Cull Report Checklist Card -->
     <section id="cull-report-card" class="card report-card hidden">
       <div class="card-header">
-        <span class="section-label">Predicted Skips</span>
+        <div>
+          <span class="section-label" id="report-title-label">Predicted Skips</span>
+          <div id="report-page-info" class="report-subtitle">Showing 0 of 0</div>
+        </div>
         <div class="export-actions">
           <button id="btn-export-csv" class="btn-sm" title="Export CSV">📄 CSV</button>
           <button id="btn-export-md" class="btn-sm" title="Copy Markdown">📋 MD</button>
@@ -88,6 +84,10 @@
       </div>
       <div id="checklist-container" class="checklist-container">
         <!-- Dynamically rendered track items -->
+      </div>
+      <div id="pagination-controls" class="pagination-row hidden">
+        <button id="btn-show-more" class="btn btn-sm btn-secondary flex-1">▾ Show 15 More</button>
+        <button id="btn-show-all" class="btn btn-sm btn-secondary">Show All</button>
       </div>
       <div class="report-footer" style="margin-top: 10px;">
         <button id="btn-apply-review" class="btn btn-accent full-width">Apply Review & Save Feedback ➔</button>
