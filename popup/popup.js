@@ -69,11 +69,13 @@ async function loadSettings() {
 
 async function loadPlaylistState() {
   const playlist = await getCurrentPlaylist();
-  if (playlist && playlist.name) {
-    playlistStatusTag.textContent = 'Active';
+  const name = playlist?.name || playlist?.playlistName;
+  const count = playlist?.tracks ? playlist.tracks.length : 0;
+
+  if (playlist && (name || count > 0)) {
+    playlistStatusTag.textContent = count > 0 ? 'Active' : 'Connecting';
     playlistStatusTag.className = 'status-tag status-active';
-    playlistNameEl.textContent = playlist.name;
-    const count = playlist.tracks ? playlist.tracks.length : 0;
+    playlistNameEl.textContent = name || 'Active Playlist';
     playlistTrackCountEl.textContent = `${count} tracks captured`;
   } else {
     playlistStatusTag.textContent = 'Not Connected';

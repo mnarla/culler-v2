@@ -94,27 +94,34 @@ async function onTrackPlaybackEvent(event) {
 async function onPlaylistIntercepted(rawPayload, authHeader) {
   const batch = parsePathfinderPlaylistPayload(rawPayload);
 
+  // If this specific query doesn't match, do not overwrite any already-loaded valid playlist
   if (batch.schemaMismatch) {
-    console.warn('[Culler Background] Pathfinder schema mismatch — stored raw payload for inspection.', batch.warnings);
-    // Store raw so developers can inspect what changed
-    await setCurrentPlaylist({ rawPayload, schemaError: batch.warnings, updatedAt: Date.now() });
+    console.warn('[Culler Background] Unrecognized Pathfinder query shape (ignored):', batch.warnings);
     return { success: false, schemaMismatch: true, warnings: batch.warnings };
   }
 
-  // Merge with any existing batches from earlier pagination responses
   const existing = await getCurrentPlaylist();
-  const merged = (existing && existing.tracks && existing.playlistId === batch.playlistId)
-    ? mergePlaylistBatches(existing, batch)
-    : batch;
+
+  // Reset if navigating to a completely different playlist ID
+  const isDifferentPlaylist = existing && existing.playlistId && batch.playlistId && existing.playlistId !== batch.playlistId;
+
+  let merged;
+  if (!existing || isDifferentPlaylist) {
+    merged = batch;
+  } else {
+    merged = mergePlaylistBatches(existing, batch);
+  }
 
   await setCurrentPlaylist({
     ...merged,
-    authHeader,
+    authHeader: authHeader || existing?.authHeader,
     updatedAt: Date.now(),
   });
 
-  console.log(`[Culler Background] Playlist "${merged.playlistName}" — ${merged.tracks.length} tracks parsed, ${merged.skippedRows} skipped rows.`);
-  return { success: true, trackCount: merged.tracks.length, playlistName: merged.playlistName };
+  const title = merged.name || merged.playlistName || 'Active Playlist';
+  const trackCount = merged.tracks ? merged.tracks.length : 0;
+  console.log(`[Culler Background] Playlist "${title}" — ${trackCount} tracks stored.`);
+  return { success: true, trackCount: trackCount, playlistName: title };
 }
 
 // ── Gemini AI Actions ────────────────────────────────────────────────────────
@@ -131,11 +138,12 @@ async function onRunBatchPredictions() {
     throw new Error('No playlist tracks loaded yet. Please open a playlist on Spotify first.');
   }
 
-  const prompt = buildBatchScoringPrompt(playlist.tracks, activeRules, playlist.name);
+  const playlistTitle = playlist.name || playlist.playlistName || 'Playlist';
+  const prompt = buildBatchScoringPrompt(playlist.tracks, activeRules, playlistTitle);
   const predictions = await generateContent(prompt, apiKey, { model });
 
   await setCullReport({
-    playlistName: playlist.name,
+    playlistName: playlistTitle,
     timestamp: Date.now(),
     predictions: predictions,
   });

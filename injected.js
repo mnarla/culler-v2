@@ -17,7 +17,7 @@
     try {
       const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : '');
 
-      if (url.includes('api-partner.spotify.com/pathfinder/v2/query')) {
+      if (url.includes('pathfinder/v2/query')) {
         // Capture authorization header if present
         let authHeader = null;
         if (args[1] && args[1].headers) {
