@@ -44,8 +44,15 @@ const btnShowAll = document.getElementById('btn-show-all');
 const btnExportCsv = document.getElementById('btn-export-csv');
 const btnExportMd = document.getElementById('btn-export-md');
 
+const countAllEl = document.getElementById('count-all');
+const countHighEl = document.getElementById('count-high');
+const countModEl = document.getElementById('count-mod');
+const countReviewEl = document.getElementById('count-review');
+const tierFilterPills = document.querySelectorAll('.filter-pill');
+
 const PAGE_SIZE = 15;
 let currentVisibleLimit = PAGE_SIZE;
+let activeTierFilter = 'ALL';
 
 // ── State Initialization ─────────────────────────────────────────────────────
 
@@ -317,6 +324,20 @@ function setupEventListeners() {
     });
   }
 
+  // Tier Filter Pills
+  tierFilterPills.forEach(pill => {
+    pill.addEventListener('click', async () => {
+      tierFilterPills.forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      activeTierFilter = pill.dataset.filter || 'ALL';
+      currentVisibleLimit = PAGE_SIZE;
+      const report = await getCullReport();
+      if (report && report.predictions) {
+        renderChecklist(report.predictions);
+      }
+    });
+  });
+
   // Export CSV (Full Dataset)
   btnExportCsv.addEventListener('click', async () => {
     const report = await getCullReport();
@@ -404,36 +425,51 @@ function setLoading(isLoading, message = '') {
 
 function renderChecklist(predictions) {
   checklistContainer.innerHTML = '';
-  const total = predictions.length;
+
+  // 1. Normalize all predictions' tiers defensively
+  predictions.forEach(item => {
+    const rawTier = item.tier ? String(item.tier).toUpperCase() : '';
+    if (rawTier.includes('HIGH') || (!item.tier && item.confidence >= 80)) {
+      item.tier = 'HIGH';
+    } else if (rawTier.includes('REVIEW') || rawTier.includes('LOW') || (!item.tier && item.confidence < 60)) {
+      item.tier = 'WORTH-REVIEWING';
+    } else {
+      item.tier = 'MODERATE';
+    }
+  });
+
+  // 2. Update pill counts
+  if (countAllEl) countAllEl.textContent = predictions.length;
+  if (countHighEl) countHighEl.textContent = predictions.filter(p => p.tier === 'HIGH').length;
+  if (countModEl) countModEl.textContent = predictions.filter(p => p.tier === 'MODERATE').length;
+  if (countReviewEl) countReviewEl.textContent = predictions.filter(p => p.tier === 'WORTH-REVIEWING').length;
+
+  // 3. Filter by activeTierFilter
+  const filtered = activeTierFilter === 'ALL'
+    ? predictions
+    : predictions.filter(p => p.tier === activeTierFilter);
+
+  const total = filtered.length;
   const visibleCount = Math.min(currentVisibleLimit, total);
 
   if (reportPageInfo) {
-    reportPageInfo.textContent = `Showing ${visibleCount} of ${total} skips`;
+    const tierSuffix = activeTierFilter === 'ALL' ? '' : ` (${activeTierFilter})`;
+    reportPageInfo.textContent = `Showing ${visibleCount} of ${total} skips${tierSuffix}`;
   }
 
-  // Render visible slice
-  const visibleItems = predictions.slice(0, visibleCount);
-  visibleItems.forEach((item, index) => {
+  // 4. Render visible slice
+  const visibleItems = filtered.slice(0, visibleCount);
+  visibleItems.forEach((item) => {
     const el = document.createElement('div');
     el.className = `checklist-item ${item.checked ? 'removed' : ''}`;
 
-    let tierClass = 'badge-tier-mod';
-    let tierLabel = 'MODERATE';
-    const rawTier = item.tier ? String(item.tier).toUpperCase() : '';
-
-    if (rawTier.includes('HIGH') || (!item.tier && item.confidence >= 80)) {
-      tierClass = 'badge-tier-high';
-      tierLabel = 'HIGH';
-    } else if (rawTier.includes('REVIEW') || rawTier.includes('LOW') || (!item.tier && item.confidence < 60)) {
-      tierClass = 'badge-tier-review';
-      tierLabel = 'WORTH REVIEWING';
-    } else {
-      tierClass = 'badge-tier-mod';
-      tierLabel = 'MODERATE';
-    }
+    const isHigh = item.tier === 'HIGH';
+    const isReview = item.tier === 'WORTH-REVIEWING';
+    const tierClass = isHigh ? 'badge-tier-high' : (isReview ? 'badge-tier-review' : 'badge-tier-mod');
+    const tierLabel = isHigh ? 'HIGH' : (isReview ? 'WORTH REVIEWING' : 'MODERATE');
 
     el.innerHTML = `
-      <input type="checkbox" id="check-${index}" ${item.checked ? 'checked' : ''}>
+      <input type="checkbox" id="check-${item.originalIndex}" ${item.checked ? 'checked' : ''}>
       <div class="checklist-content">
         <div class="item-title-row">
           <span>${item.name}</span>
@@ -453,9 +489,12 @@ function renderChecklist(predictions) {
 
       // Persist checked state to full report
       const report = await getCullReport();
-      if (report && report.predictions && report.predictions[index]) {
-        report.predictions[index].checked = item.checked;
-        await setCullReport(report);
+      if (report && report.predictions) {
+        const target = report.predictions.find(p => p.originalIndex === item.originalIndex);
+        if (target) {
+          target.checked = item.checked;
+          await setCullReport(report);
+        }
       }
     });
 

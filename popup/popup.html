@@ -82,6 +82,12 @@
           <button id="btn-export-md" class="btn-sm" title="Copy Markdown">📋 MD</button>
         </div>
       </div>
+      <div id="tier-filter-row" class="tier-filter-row">
+        <button class="filter-pill active" data-filter="ALL">All (<span id="count-all">0</span>)</button>
+        <button class="filter-pill" data-filter="HIGH">High (<span id="count-high">0</span>)</button>
+        <button class="filter-pill" data-filter="MODERATE">Moderate (<span id="count-mod">0</span>)</button>
+        <button class="filter-pill" data-filter="WORTH-REVIEWING">Review (<span id="count-review">0</span>)</button>
+      </div>
       <div id="checklist-container" class="checklist-container">
         <!-- Dynamically rendered track items -->
       </div>
