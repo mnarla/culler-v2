@@ -154,6 +154,10 @@ async function loadCullReport() {
   const report = await getCullReport();
   if (report && report.predictions && report.predictions.length > 0) {
     cullReportCard.classList.remove('hidden');
+    const titleLabel = document.getElementById('report-title-label');
+    if (titleLabel) {
+      titleLabel.textContent = `Predicted Skips (${report.predictions.length})`;
+    }
     renderChecklist(report.predictions);
   } else {
     cullReportCard.classList.add('hidden');
@@ -290,6 +294,36 @@ function setupEventListeners() {
     await navigator.clipboard.writeText(md);
     alert('Report copied to clipboard as Markdown!');
   });
+
+  // Apply Review & Save Feedback
+  const btnApplyReview = document.getElementById('btn-apply-review');
+  if (btnApplyReview) {
+    btnApplyReview.addEventListener('click', async () => {
+      const report = await getCullReport();
+      if (!report || !report.predictions || report.predictions.length === 0) return;
+
+      const confirmed = report.predictions.filter(p => p.checked);
+      const rejected = report.predictions.filter(p => !p.checked);
+
+      btnApplyReview.disabled = true;
+      btnApplyReview.textContent = 'Saving feedback...';
+
+      chrome.runtime.sendMessage({
+        type: 'CULLER_RECORD_REVIEW',
+        confirmedSkips: confirmed,
+        rejectedSkips: rejected,
+      }, (res) => {
+        btnApplyReview.disabled = false;
+        btnApplyReview.textContent = 'Apply Review & Save Feedback ➔';
+        if (res && res.error) {
+          alert(`Error saving review: ${res.error}`);
+        } else {
+          alert(`Review applied! ${confirmed.length} tracks culled, and ${rejected.length} kept tracks saved as feedback to train Gemini.`);
+          loadCullReport();
+        }
+      });
+    });
+  }
 }
 
 function setLoading(isLoading, message = '') {

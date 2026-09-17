@@ -18,6 +18,9 @@ import {
   getCurrentPlaylist,
   setCurrentPlaylist,
   setCullReport,
+  getCullReport,
+  getReviewedTracks,
+  setReviewedTracks,
 } from './lib/storage.js';
 
 console.log('[Culler v2] Background service worker registered.');
@@ -56,6 +59,9 @@ async function handleMessage(message, sender) {
 
     case 'CULLER_FETCH_FULL_PLAYLIST':
       return onFetchFullPlaylist(message.startOffset, message.totalExpected);
+
+    case 'CULLER_RECORD_REVIEW':
+      return onRecordReview(message.confirmedSkips, message.rejectedSkips);
 
     default:
       return { status: 'unknown_message_type' };
@@ -151,6 +157,28 @@ async function onPlaylistIntercepted(rawPayload, authHeader) {
 
 // ── Gemini AI Actions ────────────────────────────────────────────────────────
 
+async function onRecordReview(confirmedSkips = [], rejectedSkips = []) {
+  const reviewed = await getReviewedTracks();
+
+  const newCulled = [...(reviewed.culled || [])];
+  confirmedSkips.forEach(track => {
+    const key = `${track.name}::${track.artist}`;
+    if (!newCulled.includes(key)) newCulled.push(key);
+  });
+
+  const newKept = [...(reviewed.kept || [])];
+  rejectedSkips.forEach(track => {
+    const exists = newKept.some(k => k.name === track.name && k.artist === track.artist);
+    if (!exists) newKept.push({ name: track.name, artist: track.artist, reason: track.reason });
+  });
+
+  await setReviewedTracks({ culled: newCulled, kept: newKept });
+  await setCullReport(null);
+
+  console.log(`[Culler Background] Recorded review: ${confirmedSkips.length} culled, ${rejectedSkips.length} kept as overrides.`);
+  return { success: true, totalCulled: newCulled.length, totalKept: newKept.length };
+}
+
 async function onRunBatchPredictions() {
   const apiKey = await getApiKey();
   if (!apiKey) throw new Error('Gemini API key is not configured. Please add it in settings.');
@@ -158,13 +186,34 @@ async function onRunBatchPredictions() {
   const model = await getActiveModel();
   const playlist = await getCurrentPlaylist();
   const activeRules = await getHeuristicRules();
+  const reviewed = await getReviewedTracks();
 
   if (!playlist || !playlist.tracks || playlist.tracks.length === 0) {
     throw new Error('No playlist tracks loaded yet. Please open a playlist on Spotify first.');
   }
 
+  // Exclude tracks that user has already confirmed to cull or explicitly kept
+  const culledSet = new Set(reviewed.culled || []);
+  const keptSet = new Set((reviewed.kept || []).map(k => `${k.name}::${k.artist}`));
+
+  const candidateTracks = playlist.tracks.filter(t => {
+    const artistStr = Array.isArray(t.artists) ? t.artists.join(', ') : (t.artists || 'Unknown');
+    const key = `${t.name}::${artistStr}`;
+    return !culledSet.has(key) && !keptSet.has(key);
+  });
+
+  if (candidateTracks.length === 0) {
+    await setCullReport({
+      playlistName: playlist.name || playlist.playlistName,
+      timestamp: Date.now(),
+      predictions: [],
+      allReviewed: true,
+    });
+    return { success: true, predictions: [], allReviewed: true };
+  }
+
   const playlistTitle = playlist.name || playlist.playlistName || 'Playlist';
-  const prompt = buildBatchScoringPrompt(playlist.tracks, activeRules, playlistTitle);
+  const prompt = buildBatchScoringPrompt(candidateTracks, activeRules, playlistTitle);
   const predictions = await generateContent(prompt, apiKey, { model });
 
   let normalizedSkips = predictions;
@@ -174,6 +223,12 @@ async function onRunBatchPredictions() {
   if (!Array.isArray(normalizedSkips)) {
     normalizedSkips = [];
   }
+
+  // Filter out any matches against culled/kept sets
+  normalizedSkips = normalizedSkips.filter(s => {
+    const key = `${s.name}::${s.artist}`;
+    return !culledSet.has(key) && !keptSet.has(key);
+  });
 
   await setCullReport({
     playlistName: playlistTitle,
@@ -191,16 +246,22 @@ async function onRunCalibration() {
   const model = await getActiveModel();
   const session = await getActiveSession();
   const currentRules = await getHeuristicRules();
+  const reviewed = await getReviewedTracks();
 
-  if (!session || !session.events || session.events.length === 0) {
-    throw new Error('No listening telemetry collected in this session to calibrate from.');
+  const hasSessionEvents = session && session.events && session.events.length > 0;
+  const hasUserOverrides = reviewed && reviewed.kept && reviewed.kept.length > 0;
+
+  if (!hasSessionEvents && !hasUserOverrides) {
+    throw new Error('No listening telemetry or review feedback available to calibrate from.');
   }
 
-  const prompt = buildCalibrationPrompt(session, currentRules);
+  // Pass reviewed.kept as explicit active-learning negative feedback
+  const prompt = buildCalibrationPrompt(session || { events: [] }, currentRules, reviewed.kept || []);
   const result = await generateContent(prompt, apiKey, { model });
 
   if (result && Array.isArray(result.updatedRules)) {
     await setHeuristicRules(result.updatedRules);
+    console.log('[Culler Background] Calibrated rules updated:', result.updatedRules);
   }
 
   return { success: true, calibration: result };

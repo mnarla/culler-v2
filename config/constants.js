@@ -9,6 +9,7 @@ export const STORAGE_KEYS = {
   ACTIVE_SESSION: 'culler_active_session',
   HEURISTIC_RULES: 'culler_heuristic_rules',
   CULL_REPORT: 'culler_latest_cull_report',
+  REVIEWED_TRACKS: 'culler_reviewed_tracks',
   USER_PREFERENCES: 'culler_user_preferences',
 };
 
