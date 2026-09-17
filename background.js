@@ -6,7 +6,7 @@
  */
 
 import { generateContent } from './lib/gemini.js';
-import { buildBatchScoringPrompt, buildCalibrationPrompt } from './lib/heuristics.js';
+import { buildBatchScoringPrompt, buildCalibrationPrompt, buildPlaylistProfileHeader, buildBatchScoringPromptForChunk } from './lib/heuristics.js';
 import { parsePathfinderPlaylistPayload, mergePlaylistBatches } from './lib/parser.js';
 import {
   getApiKey,
@@ -278,16 +278,45 @@ async function onRunBatchPredictions() {
   }
 
   const playlistTitle = playlist.name || playlist.playlistName || 'Playlist';
-  const prompt = buildBatchScoringPrompt(candidateTracks, activeRules, playlistTitle);
-  const predictions = await generateContent(prompt, apiKey, { model });
+  
+  const CHUNK_SIZE = 175;
+  const chunks = [];
+  for (let i = 0; i < candidateTracks.length; i += CHUNK_SIZE) {
+    chunks.push(candidateTracks.slice(i, i + CHUNK_SIZE));
+  }
+  
+  const profile = buildPlaylistProfileHeader(candidateTracks);
 
-  let normalizedSkips = predictions;
-  if (!Array.isArray(normalizedSkips) && typeof normalizedSkips === 'object' && normalizedSkips !== null) {
-    normalizedSkips = normalizedSkips.predictions || normalizedSkips.skips || normalizedSkips.tracks || [];
-  }
-  if (!Array.isArray(normalizedSkips)) {
-    normalizedSkips = [];
-  }
+  console.log(`[Culler Background] Running predictions on ${candidateTracks.length} tracks in ${chunks.length} chunks.`);
+
+  const chunkResults = await Promise.all(
+    chunks.map(chunk => {
+      const prompt = buildBatchScoringPromptForChunk(chunk, activeRules, playlistTitle, profile);
+      return generateContent(prompt, apiKey, { model });
+    })
+  );
+
+  let normalizedSkips = [];
+  chunkResults.forEach(predictions => {
+    let skips = predictions;
+    if (!Array.isArray(skips) && typeof skips === 'object' && skips !== null) {
+      skips = skips.predictions || skips.skips || skips.tracks || [];
+    }
+    if (Array.isArray(skips)) {
+      normalizedSkips.push(...skips);
+    }
+  });
+
+  // Deduplicate by originalIndex (in case of overlap or weirdness)
+  const uniqueSkipsMap = new Map();
+  normalizedSkips.forEach(s => {
+    if (s && s.originalIndex && !uniqueSkipsMap.has(s.originalIndex)) {
+      uniqueSkipsMap.set(s.originalIndex, s);
+    } else if (s && !s.originalIndex) {
+      uniqueSkipsMap.set(Math.random(), s);
+    }
+  });
+  normalizedSkips = Array.from(uniqueSkipsMap.values());
 
   // Filter out any matches against culled/kept sets
   normalizedSkips = normalizedSkips.filter(s => {
