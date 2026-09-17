@@ -8,6 +8,23 @@
 
 console.log('[Culler v2] Content script initialized.');
 
+// ── Safe Runtime Messaging (Guard against Extension Context Invalidated) ─────
+
+function safeSendMessage(msg) {
+  if (!chrome.runtime?.id) {
+    // Extension was reloaded or updated; context invalidated
+    return;
+  }
+  try {
+    const p = chrome.runtime.sendMessage(msg);
+    if (p && typeof p.catch === 'function') {
+      p.catch(() => {});
+    }
+  } catch (e) {
+    // Suppress synchronous context invalidation errors
+  }
+}
+
 // ── Bridge: Listen to messages from injected.js (MAIN world) ────────────────
 
 window.addEventListener('message', (event) => {
@@ -15,21 +32,21 @@ window.addEventListener('message', (event) => {
   if (event.source !== window || !event.data || !event.data.type) return;
 
   if (event.data.type === 'CULLER_INTERCEPTED_PLAYLIST') {
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: 'CULLER_INTERCEPTED_PLAYLIST',
       payload: event.data.payload,
       authHeader: event.data.authHeader,
-    }).catch(() => {});
+    });
   } else if (event.data.type === 'CULLER_AUTH_EXPIRED') {
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: 'CULLER_AUTH_EXPIRED',
-    }).catch(() => {});
+    });
   } else if (
     event.data.type === 'CULLER_PAGINATION_PROGRESS' ||
     event.data.type === 'CULLER_PAGINATION_COMPLETE' ||
     event.data.type === 'CULLER_PAGINATION_ERROR'
   ) {
-    chrome.runtime.sendMessage(event.data).catch(() => {});
+    safeSendMessage(event.data);
   }
 });
 
@@ -77,7 +94,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 // Poll player bar periodically (every 1s) to track progress reliably without DOM overload
-setInterval(() => {
+const telemetryTimer = setInterval(() => {
+  if (!chrome.runtime?.id) {
+    clearInterval(telemetryTimer);
+    return;
+  }
   if (!activeSession || !activeSession.isActive) return;
 
   const titleEl = document.querySelector('[data-testid="context-item-info-title"]');
@@ -142,7 +163,7 @@ function evaluateAndReportTrack(trackState) {
   }
 
   if (eventType) {
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       type: 'CULLER_TRACK_PLAYBACK_EVENT',
       event: {
         name: trackState.title,
@@ -151,6 +172,6 @@ function evaluateAndReportTrack(trackState) {
         percentPlayed: Math.round(pctPlayed),
         timestamp: Date.now(),
       }
-    }).catch(() => {});
+    });
   }
 }
