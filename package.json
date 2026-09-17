@@ -1,1 +1,6 @@
-{"type":"module","dependencies":{"better-sqlite3":"^13.0.3","dotenv":"^17.4.2"}}
+{
+  "name": "culler-v2",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Smart Spotify playlist culling Chrome extension using listening telemetry and Gemini AI heuristics."
+}

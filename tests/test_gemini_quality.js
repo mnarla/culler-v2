@@ -1,13 +1,14 @@
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
 import { buildBatchScoringPrompt } from '../lib/heuristics.js';
 import { generateContent } from '../lib/gemini.js';
 
-// Load environment variables (for GEMINI_API_KEY)
-dotenv.config();
+// Load .env via stdlib if present
+if (process.loadEnvFile) {
+  try { process.loadEnvFile(); } catch (_) {}
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.resolve(__dirname, '../../culler/skip_predictor.db');
@@ -18,7 +19,7 @@ function fetchSampleTracks(limit = 15) {
     process.exit(1);
   }
 
-  const db = new Database(DB_PATH, { readonly: true });
+  const db = new DatabaseSync(DB_PATH, { readOnly: true });
   
   // Check if labels table has rows
   const labelCount = db.prepare("SELECT COUNT(*) as count FROM labels").get().count;
