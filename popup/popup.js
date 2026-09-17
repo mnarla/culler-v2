@@ -233,6 +233,10 @@ function setupEventListeners() {
       if (res && res.error) {
         alert(`Prediction Error: ${res.error}`);
       } else {
+        const count = Array.isArray(res?.predictions) ? res.predictions.length : 0;
+        if (count === 0) {
+          alert('Gemini evaluated all tracks and did not find any skips based on current rules. Your playlist is clean!');
+        }
         loadCullReport();
       }
     });

@@ -167,13 +167,21 @@ async function onRunBatchPredictions() {
   const prompt = buildBatchScoringPrompt(playlist.tracks, activeRules, playlistTitle);
   const predictions = await generateContent(prompt, apiKey, { model });
 
+  let normalizedSkips = predictions;
+  if (!Array.isArray(normalizedSkips) && typeof normalizedSkips === 'object' && normalizedSkips !== null) {
+    normalizedSkips = normalizedSkips.predictions || normalizedSkips.skips || normalizedSkips.tracks || [];
+  }
+  if (!Array.isArray(normalizedSkips)) {
+    normalizedSkips = [];
+  }
+
   await setCullReport({
     playlistName: playlistTitle,
     timestamp: Date.now(),
-    predictions: predictions,
+    predictions: normalizedSkips,
   });
 
-  return { success: true, predictions };
+  return { success: true, predictions: normalizedSkips };
 }
 
 async function onRunCalibration() {
