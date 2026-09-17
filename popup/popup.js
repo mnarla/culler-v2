@@ -7,6 +7,7 @@ import {
   setApiKey,
   getCurrentPlaylist,
   getActiveSession,
+  setActiveSession,
   getCullReport,
   setCullReport,
 } from '../lib/storage.js';
@@ -139,11 +140,34 @@ async function loadPlaylistState() {
   }
 }
 
+function isAdName(name, artist) {
+  const n = (name || '').toLowerCase().trim();
+  const a = (artist || '').toLowerCase().trim();
+  return (
+    n === 'advertisement' ||
+    n.startsWith('advertisement') ||
+    n === 'spotify' ||
+    n.includes('spotify ad') ||
+    n.includes('audio ad') ||
+    a === 'spotify' ||
+    a === 'advertiser' ||
+    a.includes('advertisement')
+  );
+}
+
 async function loadSessionState() {
   const session = await getActiveSession();
   const events = (session && session.events) || [];
-  const skips = events.filter(e => e.event === 'SKIP').length;
-  const keeps = events.filter(e => e.event === 'KEEP').length;
+  const validEvents = events.filter(e => !isAdName(e.name, e.artist));
+
+  // Purge any lingering ad events from storage if present
+  if (session && session.events && session.events.length !== validEvents.length) {
+    session.events = validEvents;
+    await setActiveSession(session);
+  }
+
+  const skips = validEvents.filter(e => e.event === 'SKIP').length;
+  const keeps = validEvents.filter(e => e.event === 'KEEP').length;
 
   statSkipsEl.textContent = skips;
   statKeepsEl.textContent = keeps;

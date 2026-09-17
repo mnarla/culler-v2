@@ -93,6 +93,47 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+function isAdvertisement(title, artist) {
+  if (!title) return true;
+  const t = title.toLowerCase().trim();
+  const a = (artist || '').toLowerCase().trim();
+
+  // Keyword check
+  if (
+    t === 'advertisement' ||
+    t.startsWith('advertisement') ||
+    t === 'spotify' ||
+    t.includes('spotify ad') ||
+    t.includes('audio ad')
+  ) {
+    return true;
+  }
+
+  if (
+    a === 'spotify' ||
+    a === 'advertiser' ||
+    a.includes('advertisement') ||
+    a.includes('spotify ad')
+  ) {
+    return true;
+  }
+
+  // DOM indicator checks
+  if (typeof document !== 'undefined') {
+    if (document.querySelector('[aria-label*="advertisement" i], [data-testid="track-info-advertiser"], [data-testid="ad-indicator"]')) {
+      return true;
+    }
+    const widget = document.querySelector('[data-testid="now-playing-widget"]');
+    if (widget) {
+      if (widget.querySelector('a[href*="/ad/"], a[href*="advertiser"], a[href*="spotify:ad"]')) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 // Poll player bar periodically (every 1s) to track progress reliably without DOM overload
 const telemetryTimer = setInterval(() => {
   if (!chrome.runtime?.id) {
@@ -113,6 +154,8 @@ const telemetryTimer = setInterval(() => {
   const posText = posEl.textContent?.trim();
   const durText = durEl?.textContent?.trim();
 
+  const isCurrentAd = isAdvertisement(title, artist);
+
   // Detect track change
   if (title && title !== currentTrackState.title) {
     // If previous track had play history, report its completion/skip
@@ -126,7 +169,12 @@ const telemetryTimer = setInterval(() => {
       artist: artist,
       maxPositionSec: 0,
       durationSec: parseSeconds(durText),
+      isAd: isCurrentAd,
     };
+  }
+
+  if (isCurrentAd) {
+    currentTrackState.isAd = true;
   }
 
   // Update playback position
@@ -150,6 +198,14 @@ function parseSeconds(str) {
 }
 
 function evaluateAndReportTrack(trackState) {
+  if (!trackState || !trackState.title) return;
+
+  // Silently drop advertisements
+  if (trackState.isAd || isAdvertisement(trackState.title, trackState.artist)) {
+    console.log('[Culler Telemetry] Suppressed ad playback event:', trackState.title);
+    return;
+  }
+
   if (!trackState.durationSec || trackState.durationSec <= 0) return;
 
   const pctPlayed = (trackState.maxPositionSec / trackState.durationSec) * 100;

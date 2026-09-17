@@ -114,12 +114,74 @@ async function onStopSession() {
   return { success: true, session };
 }
 
+function isAdvertisementEvent(event) {
+  if (!event || !event.name) return true;
+  const name = (event.name || '').toLowerCase().trim();
+  const artist = (event.artist || '').toLowerCase().trim();
+
+  if (
+    name === 'advertisement' ||
+    name.startsWith('advertisement') ||
+    name === 'spotify' ||
+    name.includes('spotify ad') ||
+    name.includes('audio ad')
+  ) {
+    return true;
+  }
+
+  if (
+    artist === 'spotify' ||
+    artist === 'advertiser' ||
+    artist.includes('advertisement') ||
+    artist.includes('spotify ad')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isTrackInPlaylist(event, playlistTracks) {
+  if (!playlistTracks || playlistTracks.length === 0) return true;
+  const eventName = (event.name || '').toLowerCase().trim();
+  const eventArtist = (event.artist || '').toLowerCase().trim();
+
+  return playlistTracks.some(t => {
+    const tName = (t.name || '').toLowerCase().trim();
+    if (tName === eventName) return true;
+    if (tName.includes(eventName) || eventName.includes(tName)) {
+      const tArtists = Array.isArray(t.artists)
+        ? t.artists.map(a => (a || '').toLowerCase().trim())
+        : [(t.artists || '').toLowerCase().trim()];
+      if (tArtists.some(a => a && (eventArtist.includes(a) || a.includes(eventArtist)))) {
+        return true;
+      }
+    }
+    return false;
+  });
+}
+
 async function onTrackPlaybackEvent(event) {
   const session = await getActiveSession();
   if (!session || !session.isActive) return { success: false, reason: 'no_active_session' };
 
-  // Append new event
-  session.events = session.events || [];
+  // 1. Filter out advertisements
+  if (isAdvertisementEvent(event)) {
+    console.log('[Culler Background] Suppressed advertisement playback event:', event.name);
+    return { success: false, reason: 'ignored_advertisement' };
+  }
+
+  // 2. Filter out tracks not in active playlist
+  const playlist = await getCurrentPlaylist();
+  if (playlist && Array.isArray(playlist.tracks) && playlist.tracks.length > 0) {
+    if (!isTrackInPlaylist(event, playlist.tracks)) {
+      console.log('[Culler Background] Suppressed external track outside active playlist:', event.name, event.artist);
+      return { success: false, reason: 'outside_active_playlist' };
+    }
+  }
+
+  // Append new event and purge any previously recorded ad events
+  session.events = (session.events || []).filter(e => !isAdvertisementEvent(e));
   session.events.push(event);
   await setActiveSession(session);
   return { success: true, count: session.events.length };
