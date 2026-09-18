@@ -157,23 +157,49 @@ async function scrollToTrack(name, artist, originalIndex) {
   const container = getSpotifyScrollContainer();
   if (!container) return;
 
-  // 3. Continuous auto-scroll loop
+  // 3. Continuous bi-directional auto-scroll loop
   const getRenderedIndices = () => {
     const rows = getMainRoot().querySelectorAll('[data-testid="tracklist-row"]');
     let min = Infinity, max = -Infinity;
     rows.forEach(r => {
-      const idx = parseInt(r.getAttribute('aria-rowindex'), 10);
-      if (!isNaN(idx)) {
-        if (idx < min) min = idx;
-        if (idx > max) max = idx;
+      // Check column 1 number (human track index like "12", "45")
+      const col1 = r.querySelector('[aria-colindex="1"] span, [aria-colindex="1"]');
+      const textNum = parseInt((col1?.textContent || '').trim(), 10);
+      if (!isNaN(textNum) && textNum > 0) {
+        if (textNum < min) min = textNum;
+        if (textNum > max) max = textNum;
+      }
+
+      // Check aria-rowindex
+      const ariaRow = r.getAttribute('aria-rowindex');
+      if (ariaRow) {
+        const idx = parseInt(ariaRow, 10) - 1; // row 1 is header
+        if (!isNaN(idx) && idx > 0) {
+          if (idx < min) min = idx;
+          if (idx > max) max = idx;
+        }
       }
     });
     return { min, max };
   };
 
+  // Determine smart initial direction
+  let dir = 1;
+  const initial = getRenderedIndices();
+  if (targetIndex > 0 && initial.min !== Infinity) {
+    if (targetIndex < initial.min) {
+      dir = -1; // Target is above us -> scroll UP!
+    } else {
+      dir = 1;  // Target is below us -> scroll DOWN!
+    }
+  } else if (container.scrollTop > 500 && targetIndex && targetIndex < 30) {
+    dir = -1;
+  }
+
   const startTime = Date.now();
-  const maxDurationMs = 10000; // max 10 seconds auto-scrolling
+  const maxDurationMs = 12000; // max 12 seconds auto-scrolling
   let stuckCount = 0;
+  let hasBounced = false; // allow reversing direction once if we hit an edge
 
   return new Promise((resolve) => {
     const scrollStep = () => {
@@ -193,46 +219,43 @@ async function scrollToTrack(name, artist, originalIndex) {
         return;
       }
 
-      // Determine direction (down vs up)
-      const { min, max } = getRenderedIndices();
-      let dir = 1;
-      if (targetIndex && min !== Infinity && targetIndex < min) {
-        dir = -1;
-      }
+      const stepPx = dir * 340;
 
-      const stepPx = dir * 320;
-
-      // 1. Move scroll position directly
+      // Move scroll position directly
       const prevTop = container.scrollTop;
       container.scrollTop += stepPx;
-
-      // 2. Dispatch synthetic wheel and scroll events so Spotify's listeners react
-      container.dispatchEvent(new WheelEvent('wheel', { deltaY: stepPx, bubbles: true, cancelable: true }));
       container.dispatchEvent(new Event('scroll', { bubbles: true }));
 
-      // Also scroll window if container is root element
-      if (container === document.documentElement || container === document.body) {
-        window.scrollBy(0, stepPx);
-      }
+      // Detect edge collisions (top or bottom)
+      const isAtTop = container.scrollTop <= 5;
+      const isAtBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 15;
+      const isStuck = Math.abs(container.scrollTop - prevTop) < 2;
 
-      // Check boundary stuck condition
-      if (Math.abs(container.scrollTop - prevTop) < 2) {
+      if ((isAtTop && dir === -1) || (isAtBottom && dir === 1) || isStuck) {
         stuckCount++;
-        if (stuckCount > 15) {
-          activeAutoScrollTimer = null;
-          console.warn(`[Culler v2] Auto-scroll reached edge without finding: ${cleanName}`);
-          resolve(false);
-          return;
+        if (stuckCount >= 6) {
+          if (!hasBounced) {
+            // Reverse direction to sweep the other way!
+            hasBounced = true;
+            dir = -dir;
+            stuckCount = 0;
+          } else {
+            // We swept in both directions and hit the edge: stop
+            activeAutoScrollTimer = null;
+            console.warn(`[Culler v2] Sweep completed without finding: ${cleanName}`);
+            resolve(false);
+            return;
+          }
         }
       } else {
         stuckCount = 0;
       }
 
-      // Schedule next scroll tick (~40ms gives Spotify's React virtual DOM optimal time to render)
-      activeAutoScrollTimer = setTimeout(scrollStep, 40);
+      // Schedule next scroll tick (~35ms for optimal DOM updates)
+      activeAutoScrollTimer = setTimeout(scrollStep, 35);
     };
 
-    activeAutoScrollTimer = setTimeout(scrollStep, 40);
+    activeAutoScrollTimer = setTimeout(scrollStep, 35);
   });
 }
 
