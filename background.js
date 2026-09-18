@@ -385,14 +385,7 @@ async function onRunBatchPredictions() {
     s.uri = match?.uri || `spotify:track:${s.name}::${s.artist}`;
     s.uid = s.uri;
 
-    // 2. Persist checked state across sessions
-    s.checked = Boolean(checkedMap[s.uid]);
-
-    // 3. Mark newly-appearing predictions if this is a re-scan
-    const key = s.uid || `${s.name}::${s.artist}`;
-    s.isNew = Boolean(isReScan && !prevUids.has(key));
-
-    // 4. Normalize confidence and tier
+    // 2. Normalize confidence and tier
     s.confidence = Number(s.confidence) || 60;
     const rawTier = s.tier ? String(s.tier).toUpperCase().replace(/\s+/g, '-') : '';
     if (rawTier.includes('HIGH') || (!s.tier && s.confidence >= 80)) {
@@ -401,6 +394,19 @@ async function onRunBatchPredictions() {
       s.tier = 'MODERATE';
     } else {
       s.tier = 'WORTH-REVIEWING';
+    }
+
+    // 3. Mark newly-appearing predictions if this is a re-scan
+    const key = s.uid || `${s.name}::${s.artist}`;
+    s.isNew = Boolean(isReScan && !prevUids.has(key));
+
+    // 4. Persist checked state across sessions, defaulting HIGH tier to checked
+    if (checkedMap[s.uid] !== undefined) {
+      s.checked = Boolean(checkedMap[s.uid]);
+    } else if (checkedMap[key] !== undefined) {
+      s.checked = Boolean(checkedMap[key]);
+    } else {
+      s.checked = (s.tier === 'HIGH');
     }
   });
 

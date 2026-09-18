@@ -12,6 +12,9 @@ import {
   setCullReport,
   getCheckedTracks,
   setCheckedTracks,
+  setHeuristicRules,
+  setTelemetryHistory,
+  setReviewedTracks,
 } from '../lib/storage.js';
 
 // DOM Elements
@@ -20,6 +23,7 @@ const settingsPane = document.getElementById('settings-pane');
 const inputApiKey = document.getElementById('input-api-key');
 const btnSaveKey = document.getElementById('btn-save-key');
 const btnCloseSettings = document.getElementById('btn-close-settings');
+const btnResetRules = document.getElementById('btn-reset-rules');
 
 const playlistStatusTag = document.getElementById('playlist-status-tag');
 const playlistNameEl = document.getElementById('playlist-name');
@@ -223,6 +227,8 @@ async function loadCullReport() {
       const key = p.uid || p.uri || `${p.name}::${p.artist}`;
       if (checkedMap[key] !== undefined) {
         p.checked = Boolean(checkedMap[key]);
+      } else if (p.checked === undefined) {
+        p.checked = (p.tier === 'HIGH');
       }
     });
     cullReportCard.classList.remove('hidden');
@@ -253,6 +259,21 @@ function setupEventListeners() {
     settingsPane.classList.add('hidden');
     alert('API key saved successfully.');
   });
+
+  if (btnResetRules) {
+    btnResetRules.addEventListener('click', async () => {
+      if (!confirm('Are you sure you want to reset all learned heuristic rules and playback telemetry history?')) {
+        return;
+      }
+      await setHeuristicRules([]);
+      await setTelemetryHistory({});
+      await setReviewedTracks({ culled: [], kept: [] });
+      btnResetRules.textContent = '✓ Memory Cleared!';
+      setTimeout(() => {
+        btnResetRules.textContent = '🗑️ Reset Learned Memory';
+      }, 1500);
+    });
+  }
 
   // Fetch full playlist auto-pagination
   btnFetchAll.addEventListener('click', async () => {
@@ -558,11 +579,7 @@ function renderChecklist(predictions) {
       // Persist checked state across sessions in chrome.storage.local (keyed by track URI/UID)
       const trackKey = item.uid || item.uri || `${item.name}::${item.artist}`;
       const checkedMap = await getCheckedTracks();
-      if (item.checked) {
-        checkedMap[trackKey] = true;
-      } else {
-        delete checkedMap[trackKey];
-      }
+      checkedMap[trackKey] = item.checked;
       await setCheckedTracks(checkedMap);
 
       // Persist checked state to current cull report
