@@ -36,6 +36,7 @@ window.addEventListener('message', (event) => {
       type: 'CULLER_INTERCEPTED_PLAYLIST',
       payload: event.data.payload,
       authHeader: event.data.authHeader,
+      url: event.data.url,
     });
   } else if (event.data.type === 'CULLER_AUTH_EXPIRED') {
     safeSendMessage({

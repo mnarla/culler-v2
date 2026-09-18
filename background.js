@@ -43,7 +43,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleMessage(message, sender) {
   switch (message.type) {
     case 'CULLER_INTERCEPTED_PLAYLIST':
-      return onPlaylistIntercepted(message.payload, message.authHeader);
+      return onPlaylistIntercepted(message.payload, message.authHeader, message.url, sender?.tab?.url || sender?.url);
 
     case 'CULLER_START_SESSION':
       return onStartSession(message.playlistId, message.playlistName);
@@ -216,7 +216,7 @@ async function onTrackPlaybackEvent(event) {
   return { success: true, count: session.events.length };
 }
 
-async function onPlaylistIntercepted(rawPayload, authHeader) {
+async function onPlaylistIntercepted(rawPayload, authHeader, requestUrl, tabUrl) {
   const batch = parsePathfinderPlaylistPayload(rawPayload);
 
   // If this specific query doesn't match, do not overwrite any already-loaded valid playlist
@@ -225,10 +225,24 @@ async function onPlaylistIntercepted(rawPayload, authHeader) {
     return { success: false, schemaMismatch: true, warnings: batch.warnings };
   }
 
+  // Robust playlist ID fallback from Spotify URI or URL parameters
+  if (!batch.playlistId) {
+    const urlToCheck = requestUrl || tabUrl || '';
+    const match = urlToCheck.match(/playlist[/:]([a-zA-Z0-9]{22})/);
+    if (match && match[1]) {
+      batch.playlistId = match[1];
+    }
+  }
+
   const existing = await getCurrentPlaylist();
 
   // Reset if navigating to a completely different playlist ID
-  const isDifferentPlaylist = existing && existing.playlistId && batch.playlistId && existing.playlistId !== batch.playlistId;
+  const isDifferentPlaylist = Boolean(
+    existing &&
+    existing.playlistId &&
+    batch.playlistId &&
+    existing.playlistId !== batch.playlistId
+  );
 
   let merged;
   if (!existing || isDifferentPlaylist) {
