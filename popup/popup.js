@@ -58,6 +58,11 @@ const countModEl = document.getElementById('count-mod');
 const countReviewEl = document.getElementById('count-review');
 const tierFilterPills = document.querySelectorAll('.filter-pill');
 
+const reviewQueueCard = document.getElementById('review-queue-card');
+const reviewQueueList = document.getElementById('review-queue-list');
+const reviewQueueSubtitle = document.getElementById('review-queue-subtitle');
+const btnBackToReport = document.getElementById('btn-back-to-report');
+
 const PAGE_SIZE = 15;
 let currentVisibleLimit = PAGE_SIZE;
 let activeTierFilter = 'ALL';
@@ -466,6 +471,12 @@ function setupEventListeners() {
       const confirmed = report.predictions.filter(p => p.checked);
       const rejected = report.predictions.filter(p => !p.checked);
 
+      if (confirmed.length === 0) {
+        btnApplyReview.textContent = 'No tracks checked to review!';
+        setTimeout(() => { btnApplyReview.textContent = 'Apply Review & Save Feedback ➔'; }, 2000);
+        return;
+      }
+
       btnApplyReview.disabled = true;
       btnApplyReview.textContent = 'Saving feedback...';
 
@@ -474,24 +485,75 @@ function setupEventListeners() {
         confirmedSkips: confirmed,
         rejectedSkips: rejected,
       }, (res) => {
+        btnApplyReview.disabled = false;
+        btnApplyReview.textContent = 'Apply Review & Save Feedback ➔';
         if (res && res.error) {
-          btnApplyReview.disabled = false;
           btnApplyReview.textContent = `Error: ${res.error}`;
-          setTimeout(() => {
-            btnApplyReview.textContent = 'Apply Review & Save Feedback ➔';
-          }, 3000);
+          setTimeout(() => { btnApplyReview.textContent = 'Apply Review & Save Feedback ➔'; }, 3000);
         } else {
-          // Behavior A: Confirm visually and collapse the list card
-          btnApplyReview.textContent = `✓ Review Applied (${confirmed.length} culled)`;
-          setTimeout(() => {
-            btnApplyReview.disabled = false;
-            btnApplyReview.textContent = 'Apply Review & Save Feedback ➔';
-            cullReportCard.classList.add('hidden');
-          }, 800);
+          // Show focused Review Queue screen
+          cullReportCard.classList.add('hidden');
+          renderReviewQueue(confirmed);
+          reviewQueueCard.classList.remove('hidden');
         }
       });
     });
   }
+
+  if (btnBackToReport) {
+    btnBackToReport.addEventListener('click', () => {
+      reviewQueueCard.classList.add('hidden');
+      cullReportCard.classList.remove('hidden');
+    });
+  }
+}
+
+function renderReviewQueue(tracks) {
+  reviewQueueList.innerHTML = '';
+  if (reviewQueueSubtitle) {
+    reviewQueueSubtitle.textContent = `${tracks.length} track${tracks.length !== 1 ? 's' : ''} to delete — click to jump in Spotify`;
+  }
+
+  tracks.forEach(track => {
+    const el = document.createElement('div');
+    el.className = 'checklist-item';
+    el.style.cursor = 'pointer';
+
+    const tierLabel = track.tier === 'HIGH' ? 'HIGH' : (track.tier === 'MODERATE' ? 'MODERATE' : 'REVIEWING');
+    const tierClass = track.tier === 'HIGH' ? 'badge-tier-high' : (track.tier === 'MODERATE' ? 'badge-tier-mod' : 'badge-tier-review');
+
+    el.innerHTML = `
+      <div class="checklist-content" style="width: 100%;">
+        <div class="item-title-row">
+          <span>${track.name}</span>
+          <span style="font-size: 11px; color: var(--text-muted, #888);">Jump ↗</span>
+        </div>
+        <div class="item-reason">
+          <span class="${tierClass}">${tierLabel} ${track.confidence}%</span>
+          ${track.artist}
+        </div>
+      </div>
+    `;
+
+    el.addEventListener('click', () => {
+      // Tell content.js to scroll to and highlight this track in Spotify
+      chrome.tabs.query({ url: '*://open.spotify.com/*', active: true, currentWindow: true }, (tabs) => {
+        const tab = tabs[0] || null;
+        if (!tab) return;
+        chrome.tabs.sendMessage(tab.id, {
+          type: 'CULLER_SCROLL_TO_TRACK',
+          name: track.name,
+          artist: track.artist,
+        });
+      });
+
+      // Visual feedback on the row
+      el.style.outline = '1px solid var(--accent-green, #1ed760)';
+      setTimeout(() => { el.style.outline = ''; }, 1200);
+    });
+
+    reviewQueueList.appendChild(el);
+  });
 }
 
 function setLoading(isLoading, message = '') {

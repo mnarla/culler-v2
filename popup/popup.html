@@ -106,6 +106,23 @@
         <button id="btn-apply-review" class="btn btn-accent full-width">Apply Review & Save Feedback ➔</button>
       </div>
     </section>
+
+    <!-- Review Queue Card (shown after Apply Review) -->
+    <section id="review-queue-card" class="card report-card hidden">
+      <div class="card-header">
+        <div>
+          <span class="section-label">🗑️ Review Queue</span>
+          <div id="review-queue-subtitle" class="report-subtitle">Click a track to jump to it in Spotify</div>
+        </div>
+        <button id="btn-back-to-report" class="btn-sm" title="Back to full report">← Back</button>
+      </div>
+      <div id="review-queue-list" class="checklist-container">
+        <!-- Dynamically rendered queue items -->
+      </div>
+      <div class="report-footer" style="margin-top: 10px;">
+        <p style="font-size: 11px; color: var(--text-muted, #888); text-align: center; margin: 0;">Click any track above to jump to it in Spotify, then press Delete/Backspace to remove it.</p>
+      </div>
+    </section>
   </div>
 
   <script type="module" src="popup.js"></script>

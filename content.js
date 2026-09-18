@@ -62,8 +62,51 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === 'CULLER_STOP_PAGINATION') {
     window.postMessage({ type: 'CULLER_ABORT_PAGINATION' }, '*');
     sendResponse({ status: 'stopped' });
+  } else if (message.type === 'CULLER_SCROLL_TO_TRACK') {
+    scrollToTrack(message.name, message.artist);
+    sendResponse({ status: 'scrolled' });
   }
 });
+
+// ── Scroll to Track ──────────────────────────────────────────────────────────
+
+function scrollToTrack(name, artist) {
+  const needle = (name || '').toLowerCase().trim();
+
+  // Spotify renders playlist rows as <div role="row"> containing a <div role="gridcell"> with track name
+  // Selector targets the track name element inside each playlist row
+  const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
+
+  let found = null;
+  for (const row of rows) {
+    // Track name lives in the first <a> or div with the track text
+    const nameEl = row.querySelector('[data-testid="internal-track-link"] span, a[href*="/track/"]');
+    if (nameEl && nameEl.textContent.toLowerCase().trim() === needle) {
+      found = row;
+      break;
+    }
+  }
+
+  if (!found) {
+    // Fallback: search any element whose text matches
+    for (const row of rows) {
+      if (row.textContent.toLowerCase().includes(needle)) {
+        found = row;
+        break;
+      }
+    }
+  }
+
+  if (found) {
+    found.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    found.style.outline = '2px solid #1ed760';
+    found.style.borderRadius = '4px';
+    setTimeout(() => {
+      found.style.outline = '';
+      found.style.borderRadius = '';
+    }, 2500);
+  }
+}
 
 // ── DOM Playback Telemetry ───────────────────────────────────────────────────
 
