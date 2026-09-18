@@ -73,33 +73,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 let activeAutoScrollTimer = null;
 
 function getSpotifyScrollContainer() {
-  // 1. Direct overlay scrollbar viewport (Spotify standard)
-  const osViewport = document.querySelector('[data-overlayscrollbars-viewport]');
-  if (osViewport && osViewport.scrollHeight > osViewport.clientHeight) return osViewport;
-
-  // 2. Spotify's main view container scroll node
-  const mainScroll = document.querySelector('.main-view-container__scroll-node-child')?.parentElement;
-  if (mainScroll && mainScroll.scrollHeight > mainScroll.clientHeight) return mainScroll;
-
-  // 3. Climb up from tracklist row or playlist container to find scrollable parent
-  const trackRow = document.querySelector('[data-testid="tracklist-row"], [data-testid="playlist-page"], [role="grid"]');
-  if (trackRow) {
-    let curr = trackRow.parentElement;
+  // 1. First priority: Climb directly up from the playlist page or tracklist grid itself
+  // This guarantees we find the exact scroll container holding the songs, never the sidebar!
+  const playlistElement = document.querySelector('[data-testid="tracklist-row"], [data-testid="playlist-page"], [role="grid"]');
+  if (playlistElement) {
+    let curr = playlistElement.parentElement;
     while (curr && curr !== document.body) {
-      const style = window.getComputedStyle(curr);
-      if ((style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflowY === 'overlay') && curr.scrollHeight > curr.clientHeight + 20) {
-        return curr;
+      if (curr.scrollHeight > curr.clientHeight + 20) {
+        const style = window.getComputedStyle(curr);
+        const overflow = style.overflowY;
+        if (overflow === 'auto' || overflow === 'scroll' || overflow === 'overlay') {
+          return curr;
+        }
       }
       curr = curr.parentElement;
     }
   }
 
-  // 4. Other Spotify viewport classnames
-  const fallbackOs = document.querySelector('.os-viewport, .Root__main-view .os-viewport');
-  if (fallbackOs) return fallbackOs;
+  // 2. Look for the main content area's specific viewport (explicitly exclude sidebar/nav)
+  const mainViewport = document.querySelector('main [data-overlayscrollbars-viewport], .main-view-container [data-overlayscrollbars-viewport], .Root__main-view [data-overlayscrollbars-viewport]');
+  if (mainViewport && mainViewport.scrollHeight > mainViewport.clientHeight) {
+    return mainViewport;
+  }
 
-  // 5. Fallbacks
-  return document.querySelector('main') || document.scrollingElement || document.documentElement;
+  // 3. Fallback to main element or main-view-container
+  const mainNode = document.querySelector('main, .main-view-container, .Root__main-view');
+  if (mainNode) {
+    const vp = mainNode.querySelector('.os-viewport, [data-overlayscrollbars-viewport]');
+    if (vp) return vp;
+    return mainNode;
+  }
+
+  return document.scrollingElement || document.documentElement;
 }
 
 async function scrollToTrack(name, artist, originalIndex) {
