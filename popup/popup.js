@@ -247,7 +247,16 @@ async function loadSessionState() {
 
 async function loadCullReport() {
   const report = await getCullReport();
-  if (report && report.predictions && report.predictions.length > 0) {
+  const playlist = await getCurrentPlaylist();
+
+  // If report belongs to a different playlist, don't show it!
+  const isCurrentPlaylistReport = Boolean(
+    report &&
+    ((report.playlistId && playlist?.playlistId && report.playlistId === playlist.playlistId) ||
+     (!report.playlistId && report.playlistName === (playlist?.name || playlist?.playlistName)))
+  );
+
+  if (isCurrentPlaylistReport && report.predictions && report.predictions.length > 0) {
     const checkedMap = await getCheckedTracks();
     report.predictions.forEach(p => {
       const key = p.uid || p.uri || `${p.name}::${p.artist}`;
@@ -259,11 +268,12 @@ async function loadCullReport() {
     });
     cullReportCard.classList.remove('hidden');
     if (reportTitleLabel) {
-      reportTitleLabel.textContent = `Predicted Skips (${report.predictions.length})`;
+      reportTitleLabel.textContent = `Predictions (${report.predictions.length})`;
     }
     renderChecklist(report.predictions);
   } else {
     cullReportCard.classList.add('hidden');
+    reviewQueueCard.classList.add('hidden');
   }
 }
 

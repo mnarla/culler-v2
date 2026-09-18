@@ -233,6 +233,12 @@ async function onPlaylistIntercepted(rawPayload, authHeader) {
   let merged;
   if (!existing || isDifferentPlaylist) {
     merged = batch;
+    // Wipe previous playlist's cull report & checked tracks so they never bleed over!
+    if (isDifferentPlaylist) {
+      console.log(`[Culler Background] Switching playlist: "${existing.playlistId}" -> "${batch.playlistId}". Clearing old predictions.`);
+      await setCullReport(null);
+      await setCheckedTracks({});
+    }
   } else {
     merged = mergePlaylistBatches(existing, batch);
   }
@@ -373,10 +379,18 @@ async function onRunBatchPredictions() {
 
   const checkedMap = await getCheckedTracks();
   const prevReport = await getCullReport();
-  const prevUids = new Set(
-    (prevReport?.predictions || []).map(p => p.uid || p.uri || `${p.name}::${p.artist}`)
+  
+  // Only consider prevReport if it belongs to THIS same playlist!
+  const isSamePlaylistReport = Boolean(
+    prevReport &&
+    ((prevReport.playlistId && prevReport.playlistId === playlist.playlistId) ||
+     (!prevReport.playlistId && prevReport.playlistName === playlistTitle))
   );
-  const isReScan = Boolean(prevReport && Array.isArray(prevReport.predictions) && prevReport.predictions.length > 0);
+
+  const prevUids = new Set(
+    (isSamePlaylistReport ? prevReport?.predictions || [] : []).map(p => p.uid || p.uri || `${p.name}::${p.artist}`)
+  );
+  const isReScan = Boolean(isSamePlaylistReport && Array.isArray(prevReport?.predictions) && prevReport.predictions.length > 0);
 
   normalizedSkips.forEach(s => {
     // 1. Resolve URI & UID
@@ -410,12 +424,14 @@ async function onRunBatchPredictions() {
     }
   });
 
-  // 5. Merge new predictions with existing report predictions so rerun accumulates
+  // 5. Merge new predictions only with same-playlist existing report predictions
   const combinedMap = new Map();
-  (prevReport?.predictions || []).forEach(p => {
-    const key = (p.uid || p.uri || `${p.name}::${p.artist}`).toLowerCase().trim();
-    combinedMap.set(key, { ...p, isNew: false });
-  });
+  if (isSamePlaylistReport) {
+    (prevReport?.predictions || []).forEach(p => {
+      const key = (p.uid || p.uri || `${p.name}::${p.artist}`).toLowerCase().trim();
+      combinedMap.set(key, { ...p, isNew: false });
+    });
+  }
 
   normalizedSkips.forEach(s => {
     const key = (s.uid || s.uri || `${s.name}::${s.artist}`).toLowerCase().trim();
@@ -447,6 +463,7 @@ async function onRunBatchPredictions() {
   });
 
   await setCullReport({
+    playlistId: playlist.playlistId,
     playlistName: playlistTitle,
     timestamp: Date.now(),
     predictions: finalList,
