@@ -193,33 +193,54 @@ async function loadSessionState() {
   statKeepsEl.textContent = keeps;
 
   if (session && session.isActive) {
-    btnToggleSession.textContent = `✨ Stop & Generate Cull List (${skips} skips, ${keeps} keeps)`;
-    btnToggleSession.className = 'btn btn-magic full-width';
+    btnToggleSession.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+      </svg>
+      Stop & Analyze (${skips} skips, ${keeps} keeps)
+    `;
+    btnToggleSession.className = 'btn btn-primary full-width';
     if (btnQuickScan) btnQuickScan.classList.add('hidden');
 
     if (btnPauseSession) {
       btnPauseSession.classList.remove('hidden');
       if (session.isPaused) {
-        btnPauseSession.textContent = '▶️ Resume Session';
+        btnPauseSession.innerHTML = `
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          Resume Session
+        `;
         if (sessionStatusBadge) {
           sessionStatusBadge.textContent = 'PAUSED';
           sessionStatusBadge.className = 'status-tag status-paused';
           sessionStatusBadge.classList.remove('hidden');
         }
       } else {
-        btnPauseSession.textContent = '⏸️ Pause Session';
+        btnPauseSession.innerHTML = `
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16"></rect>
+            <rect x="14" y="4" width="4" height="16"></rect>
+          </svg>
+          Pause Session
+        `;
         if (sessionStatusBadge) {
-          sessionStatusBadge.textContent = 'ACTIVE';
+          sessionStatusBadge.textContent = 'TRACKING';
           sessionStatusBadge.className = 'status-tag status-active';
           sessionStatusBadge.classList.remove('hidden');
         }
       }
     }
   } else {
-    btnToggleSession.textContent = 'Start Culling Session 🎧';
-    btnToggleSession.className = 'btn btn-accent full-width';
-    if (btnQuickScan) btnQuickScan.classList.remove('hidden');
+    btnToggleSession.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+      </svg>
+      Start Telemetry Session
+    `;
+    btnToggleSession.className = 'btn btn-primary full-width';
     if (btnPauseSession) btnPauseSession.classList.add('hidden');
+    if (btnQuickScan) btnQuickScan.classList.remove('hidden');
     if (sessionStatusBadge) sessionStatusBadge.classList.add('hidden');
   }
 }
@@ -511,26 +532,31 @@ function setupEventListeners() {
 function renderReviewQueue(tracks) {
   reviewQueueList.innerHTML = '';
   if (reviewQueueSubtitle) {
-    reviewQueueSubtitle.textContent = `${tracks.length} track${tracks.length !== 1 ? 's' : ''} to delete — click to jump in Spotify`;
+    reviewQueueSubtitle.textContent = `${tracks.length} track${tracks.length !== 1 ? 's' : ''} queued • click to isolate in Spotify`;
   }
 
   tracks.forEach(track => {
     const el = document.createElement('div');
-    el.className = 'checklist-item';
-    el.style.cursor = 'pointer';
+    el.className = 'checklist-item queue-row';
 
-    const tierLabel = track.tier === 'HIGH' ? 'HIGH' : (track.tier === 'MODERATE' ? 'MODERATE' : 'REVIEWING');
+    const tierLabel = track.tier === 'HIGH' ? 'HIGH' : (track.tier === 'MODERATE' ? 'MOD' : 'REVIEW');
     const tierClass = track.tier === 'HIGH' ? 'badge-tier-high' : (track.tier === 'MODERATE' ? 'badge-tier-mod' : 'badge-tier-review');
 
     el.innerHTML = `
-      <div class="checklist-content" style="width: 100%;">
+      <div class="checklist-content">
         <div class="item-title-row">
-          <span>${track.name}</span>
-          <span style="font-size: 11px; color: var(--text-muted, #888);">Jump ↗</span>
+          <span class="track-name-text">${track.name}</span>
+          <span class="queue-jump-tag">
+            Jump
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="7 7 17 7 17 17"></polyline>
+            </svg>
+          </span>
         </div>
         <div class="item-reason">
           <span class="${tierClass}">${tierLabel} ${track.confidence}%</span>
-          ${track.artist}
+          <span>${track.artist}</span>
         </div>
       </div>
     `;
@@ -554,12 +580,22 @@ function renderReviewQueue(tracks) {
       }
 
       // Visual feedback on the row
-      el.style.outline = '1px solid var(--accent-green, #1ed760)';
-      const jumpLabel = el.querySelector('.item-title-row span:last-child');
-      if (jumpLabel) jumpLabel.textContent = 'Filtered 🔍';
+      el.style.borderColor = 'var(--accent)';
+      el.style.boxShadow = '0 0 15px -3px var(--accent-glow)';
+      const jumpLabel = el.querySelector('.queue-jump-tag');
+      if (jumpLabel) jumpLabel.textContent = 'Locating...';
       setTimeout(() => {
-        el.style.outline = '';
-        if (jumpLabel) jumpLabel.textContent = 'Jump ↗';
+        el.style.borderColor = '';
+        el.style.boxShadow = '';
+        if (jumpLabel) {
+          jumpLabel.innerHTML = `
+            Jump
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="7" y1="17" x2="17" y2="7"></line>
+              <polyline points="7 7 17 7 17 17"></polyline>
+            </svg>
+          `;
+        }
       }, 1500);
     });
 
@@ -615,7 +651,7 @@ function renderChecklist(predictions) {
   if (reportPageInfo) {
     const tierSuffix = activeTierFilter === 'ALL' ? '' : ` (${activeTierFilter})`;
     const newSuffix = newCount > 0 ? ` • ${newCount} new` : '';
-    reportPageInfo.textContent = `Showing ${visibleCount} of ${total} skips${tierSuffix}${newSuffix}`;
+    reportPageInfo.textContent = `${visibleCount} of ${total} tracks${tierSuffix}${newSuffix}`;
   }
 
   // 4. Render visible slice
@@ -627,19 +663,19 @@ function renderChecklist(predictions) {
     const isHigh = item.tier === 'HIGH';
     const isReview = item.tier === 'WORTH-REVIEWING';
     const tierClass = isHigh ? 'badge-tier-high' : (isReview ? 'badge-tier-review' : 'badge-tier-mod');
-    const tierLabel = isHigh ? 'HIGH' : (isReview ? 'WORTH REVIEWING' : 'MODERATE');
+    const tierLabel = isHigh ? 'HIGH' : (isReview ? 'LOW' : 'MED');
     const newBadgeHtml = item.isNew ? '<span class="badge-new">NEW</span>' : '';
 
     el.innerHTML = `
       <input type="checkbox" id="check-${item.originalIndex}" ${item.checked ? 'checked' : ''}>
       <div class="checklist-content">
         <div class="item-title-row">
-          <span>${item.name} ${newBadgeHtml}</span>
+          <span class="track-name-text">${item.name} ${newBadgeHtml}</span>
           <span class="item-index">#${item.originalIndex}</span>
         </div>
         <div class="item-reason">
           <span class="${tierClass}">${tierLabel} ${item.confidence}%</span>
-          ${item.artist} • ${item.reason}
+          <span>${item.artist} • ${item.reason}</span>
         </div>
       </div>
     `;
