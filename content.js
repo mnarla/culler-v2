@@ -63,38 +63,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     window.postMessage({ type: 'CULLER_ABORT_PAGINATION' }, '*');
     sendResponse({ status: 'stopped' });
   } else if (message.type === 'CULLER_SCROLL_TO_TRACK') {
-    scrollToTrack(message.name, message.artist);
+    scrollToTrack(message.name, message.artist, message.originalIndex);
     sendResponse({ status: 'scrolled' });
   }
 });
 
 // ── Scroll to Track ──────────────────────────────────────────────────────────
 
-function scrollToTrack(name, artist) {
+async function scrollToTrack(name, artist, originalIndex) {
   const needle = (name || '').toLowerCase().trim();
 
-  // Spotify renders playlist rows as <div role="row"> containing a <div role="gridcell"> with track name
-  // Selector targets the track name element inside each playlist row
-  const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
-
-  let found = null;
-  for (const row of rows) {
-    // Track name lives in the first <a> or div with the track text
-    const nameEl = row.querySelector('[data-testid="internal-track-link"] span, a[href*="/track/"]');
-    if (nameEl && nameEl.textContent.toLowerCase().trim() === needle) {
-      found = row;
-      break;
-    }
-  }
-
-  if (!found) {
-    // Fallback: search any element whose text matches
+  // Helper to find the row if it exists in DOM
+  const findRow = () => {
+    const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
     for (const row of rows) {
-      if (row.textContent.toLowerCase().includes(needle)) {
-        found = row;
-        break;
-      }
+      const nameEl = row.querySelector('[data-testid="internal-track-link"] span, a[href*="/track/"]');
+      if (nameEl && nameEl.textContent.toLowerCase().trim() === needle) return row;
     }
+    for (const row of rows) {
+      if (row.textContent.toLowerCase().includes(needle)) return row;
+    }
+    return null;
+  };
+
+  let found = findRow();
+
+  // If not found in DOM and we have an index, force scroll the virtual container
+  if (!found && typeof originalIndex === 'number' && originalIndex > 0) {
+    const scrollContainer = document.querySelector('.os-viewport') || window;
+    // Spotify playlist rows are exactly 56px high. originalIndex is 1-based.
+    const estimatedTop = (originalIndex - 1) * 56;
+    
+    if (scrollContainer.scrollTo) {
+      scrollContainer.scrollTo({ top: Math.max(0, estimatedTop - 200), behavior: 'smooth' });
+    }
+    
+    // Wait for Spotify's React tree to mount the virtual rows
+    await new Promise(r => setTimeout(r, 600));
+    found = findRow();
   }
 
   if (found) {

@@ -544,6 +544,7 @@ function renderReviewQueue(tracks) {
           type: 'CULLER_SCROLL_TO_TRACK',
           name: track.name,
           artist: track.artist,
+          originalIndex: track.originalIndex,
         });
       });
 
