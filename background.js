@@ -368,9 +368,35 @@ async function onRunBatchPredictions() {
     }
   });
 
-  // 5. Sort: Tiers (HIGH -> MOD -> REVIEW), with newly-appearing predictions sorted to top within their tier
+  // 5. Merge new predictions with existing report predictions so rerun accumulates
+  const combinedMap = new Map();
+  (prevReport?.predictions || []).forEach(p => {
+    const key = (p.uid || p.uri || `${p.name}::${p.artist}`).toLowerCase().trim();
+    combinedMap.set(key, { ...p, isNew: false });
+  });
+
+  normalizedSkips.forEach(s => {
+    const key = (s.uid || s.uri || `${s.name}::${s.artist}`).toLowerCase().trim();
+    if (combinedMap.has(key)) {
+      const existing = combinedMap.get(key);
+      combinedMap.set(key, {
+        ...existing,
+        confidence: s.confidence,
+        tier: s.tier,
+        reason: s.reason,
+        checked: existing.checked !== undefined ? existing.checked : s.checked,
+        isNew: false,
+      });
+    } else {
+      combinedMap.set(key, s);
+    }
+  });
+
+  const finalList = Array.from(combinedMap.values());
+
+  // 6. Sort: Tiers (HIGH -> MOD -> REVIEW), with newly-appearing predictions sorted to top within their tier
   const tierWeight = { 'HIGH': 3, 'MODERATE': 2, 'WORTH-REVIEWING': 1 };
-  normalizedSkips.sort((a, b) => {
+  finalList.sort((a, b) => {
     const tierDiff = (tierWeight[b.tier] || 0) - (tierWeight[a.tier] || 0);
     if (tierDiff !== 0) return tierDiff;
     if (b.isNew && !a.isNew) return 1;
@@ -381,10 +407,10 @@ async function onRunBatchPredictions() {
   await setCullReport({
     playlistName: playlistTitle,
     timestamp: Date.now(),
-    predictions: normalizedSkips,
+    predictions: finalList,
   });
 
-  return { success: true, predictions: normalizedSkips };
+  return { success: true, predictions: finalList };
 }
 
 async function onStopAndGenerate() {

@@ -453,14 +453,20 @@ function setupEventListeners() {
         confirmedSkips: confirmed,
         rejectedSkips: rejected,
       }, (res) => {
-        btnApplyReview.disabled = false;
-        btnApplyReview.textContent = 'Apply Review & Save Feedback ➔';
         if (res && res.error) {
-          alert(`Error saving review: ${res.error}`);
+          btnApplyReview.disabled = false;
+          btnApplyReview.textContent = `Error: ${res.error}`;
+          setTimeout(() => {
+            btnApplyReview.textContent = 'Apply Review & Save Feedback ➔';
+          }, 3000);
         } else {
-          alert(`Review applied! ${confirmed.length} tracks culled, and ${rejected.length} kept tracks saved as feedback to train Gemini.`);
-          currentVisibleLimit = PAGE_SIZE;
-          loadCullReport();
+          // Behavior A: Confirm visually and collapse the list card
+          btnApplyReview.textContent = `✓ Review Applied (${confirmed.length} culled)`;
+          setTimeout(() => {
+            btnApplyReview.disabled = false;
+            btnApplyReview.textContent = 'Apply Review & Save Feedback ➔';
+            cullReportCard.classList.add('hidden');
+          }, 800);
         }
       });
     });
