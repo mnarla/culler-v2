@@ -73,35 +73,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 let activeAutoScrollTimer = null;
 
 function getSpotifyScrollContainer() {
-  // 1. Look inside main content area first
-  const main = document.querySelector('main, #main, [data-testid="playlist-page"]');
-  if (main) {
-    const mainVp = main.querySelector('[data-overlayscrollbars-viewport], .os-viewport');
-    if (mainVp && mainVp.scrollHeight > mainVp.clientHeight) return mainVp;
+  // 1. Direct target confirmed via DevTools: Spotify Web uses <main> as the scroll container
+  const main = document.querySelector('main');
+  if (main && main.scrollHeight > main.clientHeight) {
+    return main;
+  }
 
-    const row = main.querySelector('[data-testid="tracklist-row"]');
-    if (row) {
-      let p = row.parentElement;
-      while (p && p !== document.body) {
-        if (p.scrollHeight > p.clientHeight + 20) {
-          const style = window.getComputedStyle(p);
-          if (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflowY === 'overlay') {
-            return p;
-          }
-        }
-        p = p.parentElement;
+  // 2. Climb up from tracklist row to find any scrolling parent
+  const row = document.querySelector('[data-testid="tracklist-row"]');
+  if (row) {
+    let p = row.parentElement;
+    while (p && p !== document.body) {
+      if (p.scrollHeight > p.clientHeight + 20) {
+        return p;
       }
+      p = p.parentElement;
     }
   }
 
-  // 2. Pick the widest viewport on screen (main view is ~1000px+ wide, sidebar is only ~280px)
-  const viewports = Array.from(document.querySelectorAll('[data-overlayscrollbars-viewport], .os-viewport'));
-  if (viewports.length > 0) {
-    viewports.sort((a, b) => b.clientWidth - a.clientWidth);
-    return viewports[0];
-  }
-
-  return document.querySelector('main') || document.scrollingElement || document.documentElement;
+  // 3. Fallbacks
+  return main || document.scrollingElement || document.documentElement;
 }
 
 async function scrollToTrack(name, artist, originalIndex) {
