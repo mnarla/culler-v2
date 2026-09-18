@@ -10,6 +10,8 @@ import {
   setActiveSession,
   getCullReport,
   setCullReport,
+  getCheckedTracks,
+  setCheckedTracks,
 } from '../lib/storage.js';
 
 // DOM Elements
@@ -216,6 +218,13 @@ async function loadSessionState() {
 async function loadCullReport() {
   const report = await getCullReport();
   if (report && report.predictions && report.predictions.length > 0) {
+    const checkedMap = await getCheckedTracks();
+    report.predictions.forEach(p => {
+      const key = p.uid || p.uri || `${p.name}::${p.artist}`;
+      if (checkedMap[key] !== undefined) {
+        p.checked = Boolean(checkedMap[key]);
+      }
+    });
     cullReportCard.classList.remove('hidden');
     if (reportTitleLabel) {
       reportTitleLabel.textContent = `Predicted Skips (${report.predictions.length})`;
@@ -501,28 +510,31 @@ function renderChecklist(predictions) {
 
   const total = filtered.length;
   const visibleCount = Math.min(currentVisibleLimit, total);
+  const newCount = filtered.filter(p => p.isNew).length;
 
   if (reportPageInfo) {
     const tierSuffix = activeTierFilter === 'ALL' ? '' : ` (${activeTierFilter})`;
-    reportPageInfo.textContent = `Showing ${visibleCount} of ${total} skips${tierSuffix}`;
+    const newSuffix = newCount > 0 ? ` • ${newCount} new` : '';
+    reportPageInfo.textContent = `Showing ${visibleCount} of ${total} skips${tierSuffix}${newSuffix}`;
   }
 
   // 4. Render visible slice
   const visibleItems = filtered.slice(0, visibleCount);
   visibleItems.forEach((item) => {
     const el = document.createElement('div');
-    el.className = `checklist-item ${item.checked ? 'removed' : ''}`;
+    el.className = `checklist-item ${item.checked ? 'removed' : ''} ${item.isNew ? 'is-new' : ''}`;
 
     const isHigh = item.tier === 'HIGH';
     const isReview = item.tier === 'WORTH-REVIEWING';
     const tierClass = isHigh ? 'badge-tier-high' : (isReview ? 'badge-tier-review' : 'badge-tier-mod');
     const tierLabel = isHigh ? 'HIGH' : (isReview ? 'WORTH REVIEWING' : 'MODERATE');
+    const newBadgeHtml = item.isNew ? '<span class="badge-new">NEW</span>' : '';
 
     el.innerHTML = `
       <input type="checkbox" id="check-${item.originalIndex}" ${item.checked ? 'checked' : ''}>
       <div class="checklist-content">
         <div class="item-title-row">
-          <span>${item.name}</span>
+          <span>${item.name} ${newBadgeHtml}</span>
           <span class="item-index">#${item.originalIndex}</span>
         </div>
         <div class="item-reason">
@@ -537,10 +549,20 @@ function renderChecklist(predictions) {
       item.checked = e.target.checked;
       el.classList.toggle('removed', item.checked);
 
-      // Persist checked state to full report
+      // Persist checked state across sessions in chrome.storage.local (keyed by track URI/UID)
+      const trackKey = item.uid || item.uri || `${item.name}::${item.artist}`;
+      const checkedMap = await getCheckedTracks();
+      if (item.checked) {
+        checkedMap[trackKey] = true;
+      } else {
+        delete checkedMap[trackKey];
+      }
+      await setCheckedTracks(checkedMap);
+
+      // Persist checked state to current cull report
       const report = await getCullReport();
       if (report && report.predictions) {
-        const target = report.predictions.find(p => p.originalIndex === item.originalIndex);
+        const target = report.predictions.find(p => (p.uid || p.uri || p.originalIndex) === (item.uid || item.uri || item.originalIndex));
         if (target) {
           target.checked = item.checked;
           await setCullReport(report);

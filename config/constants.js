@@ -10,6 +10,7 @@ export const STORAGE_KEYS = {
   HEURISTIC_RULES: 'culler_heuristic_rules',
   CULL_REPORT: 'culler_latest_cull_report',
   REVIEWED_TRACKS: 'culler_reviewed_tracks',
+  CHECKED_TRACKS: 'culler_checked_tracks',
 };
 
 export const MODEL_DEFAULTS = {

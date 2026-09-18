@@ -18,8 +18,10 @@ import {
   getCurrentPlaylist,
   setCurrentPlaylist,
   setCullReport,
+  getCullReport,
   getReviewedTracks,
   setReviewedTracks,
+  getCheckedTracks,
 } from './lib/storage.js';
 
 console.log('[Culler v2] Background service worker registered.');
@@ -244,18 +246,17 @@ async function onRecordReview(confirmedSkips = [], rejectedSkips = []) {
 
   const newCulled = [...(reviewed.culled || [])];
   confirmedSkips.forEach(track => {
-    const key = `${track.name}::${track.artist}`;
+    const key = track.uid || track.uri || `${track.name}::${track.artist}`;
     if (!newCulled.includes(key)) newCulled.push(key);
   });
 
   const newKept = [...(reviewed.kept || [])];
   rejectedSkips.forEach(track => {
-    const exists = newKept.some(k => k.name === track.name && k.artist === track.artist);
-    if (!exists) newKept.push({ name: track.name, artist: track.artist, reason: track.reason });
+    const exists = newKept.some(k => (k.uid || k.name) === (track.uid || track.name) && k.artist === track.artist);
+    if (!exists) newKept.push({ name: track.name, artist: track.artist, uid: track.uid, uri: track.uri, reason: track.reason });
   });
 
   await setReviewedTracks({ culled: newCulled, kept: newKept });
-  await setCullReport(null);
 
   console.log(`[Culler Background] Recorded review: ${confirmedSkips.length} culled, ${rejectedSkips.length} kept as overrides.`);
   return { success: true, totalCulled: newCulled.length, totalKept: newKept.length };
@@ -268,21 +269,13 @@ async function onRunBatchPredictions() {
   const model = await getActiveModel();
   const playlist = await getCurrentPlaylist();
   const activeRules = await getHeuristicRules();
-  const reviewed = await getReviewedTracks();
 
   if (!playlist || !playlist.tracks || playlist.tracks.length === 0) {
     throw new Error('No playlist tracks loaded yet. Please open a playlist on Spotify first.');
   }
 
-  // Exclude tracks that user has already confirmed to cull or explicitly kept
-  const culledSet = new Set(reviewed.culled || []);
-  const keptSet = new Set((reviewed.kept || []).map(k => `${k.name}::${k.artist}`));
-
-  const candidateTracks = playlist.tracks.filter(t => {
-    const artistStr = Array.isArray(t.artists) ? t.artists.join(', ') : (t.artists || 'Unknown');
-    const key = `${t.name}::${artistStr}`;
-    return !culledSet.has(key) && !keptSet.has(key);
-  });
+  // Full, honest scan of the entire playlist — no exclusion filtering
+  const candidateTracks = playlist.tracks;
 
   if (candidateTracks.length === 0) {
     await setCullReport({
@@ -304,7 +297,7 @@ async function onRunBatchPredictions() {
   
   const profile = buildPlaylistProfileHeader(candidateTracks);
 
-  console.log(`[Culler Background] Running predictions on ${candidateTracks.length} tracks in ${chunks.length} chunks.`);
+  console.log(`[Culler Background] Running full scan on ${candidateTracks.length} tracks in ${chunks.length} chunks.`);
 
   const chunkResults = await Promise.all(
     chunks.map(chunk => {
@@ -335,14 +328,35 @@ async function onRunBatchPredictions() {
   });
   normalizedSkips = Array.from(uniqueSkipsMap.values());
 
-  // Filter out any matches against culled/kept sets
-  normalizedSkips = normalizedSkips.filter(s => {
-    const key = `${s.name}::${s.artist}`;
-    return !culledSet.has(key) && !keptSet.has(key);
-  });
+  // Attach URI/UID, restore checked state, and detect newly-appearing predictions
+  const trackByPos = new Map((playlist.tracks || []).map(t => [t.originalIndex, t]));
+  const trackByName = new Map((playlist.tracks || []).map(t => {
+    const a = Array.isArray(t.artists) ? t.artists.join(', ') : (t.artists || '');
+    return [`${t.name}::${a}`.toLowerCase(), t];
+  }));
 
-  // Normalize confidence and tier
+  const checkedMap = await getCheckedTracks();
+  const prevReport = await getCullReport();
+  const prevUids = new Set(
+    (prevReport?.predictions || []).map(p => p.uid || p.uri || `${p.name}::${p.artist}`)
+  );
+  const isReScan = Boolean(prevReport && Array.isArray(prevReport.predictions) && prevReport.predictions.length > 0);
+
   normalizedSkips.forEach(s => {
+    // 1. Resolve URI & UID
+    const match = trackByPos.get(Number(s.originalIndex)) ||
+                  trackByName.get(`${s.name}::${s.artist}`.toLowerCase());
+    s.uri = match?.uri || `spotify:track:${s.name}::${s.artist}`;
+    s.uid = s.uri;
+
+    // 2. Persist checked state across sessions
+    s.checked = Boolean(checkedMap[s.uid]);
+
+    // 3. Mark newly-appearing predictions if this is a re-scan
+    const key = s.uid || `${s.name}::${s.artist}`;
+    s.isNew = Boolean(isReScan && !prevUids.has(key));
+
+    // 4. Normalize confidence and tier
     s.confidence = Number(s.confidence) || 60;
     const rawTier = s.tier ? String(s.tier).toUpperCase().replace(/\s+/g, '-') : '';
     if (rawTier.includes('HIGH') || (!s.tier && s.confidence >= 80)) {
@@ -354,8 +368,15 @@ async function onRunBatchPredictions() {
     }
   });
 
-  // Sort descending by confidence
-  normalizedSkips.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+  // 5. Sort: Tiers (HIGH -> MOD -> REVIEW), with newly-appearing predictions sorted to top within their tier
+  const tierWeight = { 'HIGH': 3, 'MODERATE': 2, 'WORTH-REVIEWING': 1 };
+  normalizedSkips.sort((a, b) => {
+    const tierDiff = (tierWeight[b.tier] || 0) - (tierWeight[a.tier] || 0);
+    if (tierDiff !== 0) return tierDiff;
+    if (b.isNew && !a.isNew) return 1;
+    if (a.isNew && !b.isNew) return -1;
+    return (b.confidence || 0) - (a.confidence || 0);
+  });
 
   await setCullReport({
     playlistName: playlistTitle,
