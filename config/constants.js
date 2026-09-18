@@ -11,6 +11,7 @@ export const STORAGE_KEYS = {
   CULL_REPORT: 'culler_latest_cull_report',
   REVIEWED_TRACKS: 'culler_reviewed_tracks',
   CHECKED_TRACKS: 'culler_checked_tracks',
+  TELEMETRY_HISTORY: 'culler_telemetry_history',
 };
 
 export const MODEL_DEFAULTS = {

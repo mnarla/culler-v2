@@ -22,6 +22,8 @@ import {
   getReviewedTracks,
   setReviewedTracks,
   getCheckedTracks,
+  getTelemetryHistory,
+  setTelemetryHistory,
 } from './lib/storage.js';
 
 console.log('[Culler v2] Background service worker registered.');
@@ -203,6 +205,12 @@ async function onTrackPlaybackEvent(event) {
   session.events = (session.events || []).filter(e => !isAdvertisementEvent(e));
   session.events.push(event);
   await setActiveSession(session);
+
+  // Accumulate cumulative telemetry history
+  const history = await getTelemetryHistory();
+  history.push(event);
+  await setTelemetryHistory(history);
+
   return { success: true, count: session.events.length };
 }
 
@@ -274,8 +282,33 @@ async function onRunBatchPredictions() {
     throw new Error('No playlist tracks loaded yet. Please open a playlist on Spotify first.');
   }
 
-  // Full, honest scan of the entire playlist — no exclusion filtering
-  const candidateTracks = playlist.tracks;
+  // Safe exclusion filtering: only hard-protect explicitly kept tracks
+  const history = await getTelemetryHistory();
+  const reviewed = await getReviewedTracks();
+  const keptKeys = new Set();
+  
+  (reviewed.kept || []).forEach(k => {
+    if (k.uid) keptKeys.add(k.uid);
+    if (k.uri) keptKeys.add(k.uri);
+    if (k.name && k.artist) keptKeys.add(`${k.name}::${k.artist}`.toLowerCase());
+  });
+
+  history.forEach(e => {
+    if (e.percentPlayed > 65) {
+      if (e.uid) keptKeys.add(e.uid);
+      if (e.uri) keptKeys.add(e.uri);
+      if (e.name && e.artist) keptKeys.add(`${e.name}::${e.artist}`.toLowerCase());
+    }
+  });
+
+  const candidateTracks = playlist.tracks.filter(t => {
+    const uid = t.uid || t.uri;
+    const nameKey = t.name && t.artists ? `${t.name}::${Array.isArray(t.artists) ? t.artists.join(', ') : t.artists}`.toLowerCase() : null;
+    
+    if (uid && keptKeys.has(uid)) return false;
+    if (nameKey && keptKeys.has(nameKey)) return false;
+    return true;
+  });
 
   if (candidateTracks.length === 0) {
     await setCullReport({
@@ -454,13 +487,28 @@ async function onRunCalibration() {
 
   const hasSessionEvents = session && session.events && session.events.length > 0;
   const hasUserOverrides = reviewed && reviewed.kept && reviewed.kept.length > 0;
+  const history = await getTelemetryHistory();
 
-  if (!hasSessionEvents && !hasUserOverrides) {
+  if (!hasSessionEvents && !hasUserOverrides && (!history || history.length === 0)) {
     throw new Error('No listening telemetry or review feedback available to calibrate from.');
   }
 
+  // Merge session events and telemetry history
+  const allEvents = [...history, ...(session?.events || [])];
+  
+  // Deduplicate by timestamp
+  const uniqueEventsMap = new Map();
+  allEvents.forEach(e => {
+    if (e.timestamp) {
+      uniqueEventsMap.set(e.timestamp, e);
+    } else {
+      uniqueEventsMap.set(Math.random(), e);
+    }
+  });
+  const mergedEvents = Array.from(uniqueEventsMap.values());
+
   // Pass reviewed.kept as explicit active-learning negative feedback
-  const prompt = buildCalibrationPrompt(session || { events: [] }, currentRules, reviewed.kept || []);
+  const prompt = buildCalibrationPrompt({ events: mergedEvents }, currentRules, reviewed.kept || []);
   const result = await generateContent(prompt, apiKey, { model });
 
   if (result && Array.isArray(result.updatedRules)) {
