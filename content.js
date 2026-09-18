@@ -68,117 +68,174 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// ── Adaptive Step-Scroll to Track in Spotify ─────────────────────────────────
+// ── Continuous Auto-Scroller to Track in Spotify ─────────────────────────────
+
+let activeAutoScrollTimer = null;
 
 function getSpotifyScrollContainer() {
   // 1. Direct overlay scrollbar viewport (Spotify standard)
-  const osViewport = document.querySelector('[data-overlayscrollbars-viewport], .os-viewport');
-  if (osViewport) return osViewport;
+  const osViewport = document.querySelector('[data-overlayscrollbars-viewport]');
+  if (osViewport && osViewport.scrollHeight > osViewport.clientHeight) return osViewport;
 
-  // 2. Climb up from tracklist row or playlist container to find scrollable parent
-  const trackRow = document.querySelector('[data-testid="tracklist-row"], [data-testid="playlist-page"]');
+  // 2. Spotify's main view container scroll node
+  const mainScroll = document.querySelector('.main-view-container__scroll-node-child')?.parentElement;
+  if (mainScroll && mainScroll.scrollHeight > mainScroll.clientHeight) return mainScroll;
+
+  // 3. Climb up from tracklist row or playlist container to find scrollable parent
+  const trackRow = document.querySelector('[data-testid="tracklist-row"], [data-testid="playlist-page"], [role="grid"]');
   if (trackRow) {
     let curr = trackRow.parentElement;
     while (curr && curr !== document.body) {
       const style = window.getComputedStyle(curr);
-      if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && curr.scrollHeight > curr.clientHeight) {
+      if ((style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflowY === 'overlay') && curr.scrollHeight > curr.clientHeight + 20) {
         return curr;
       }
       curr = curr.parentElement;
     }
   }
 
-  // 3. Fallbacks
-  return document.querySelector('main') || document.documentElement;
+  // 4. Other Spotify viewport classnames
+  const fallbackOs = document.querySelector('.os-viewport, .Root__main-view .os-viewport');
+  if (fallbackOs) return fallbackOs;
+
+  // 5. Fallbacks
+  return document.querySelector('main') || document.scrollingElement || document.documentElement;
 }
 
 async function scrollToTrack(name, artist, originalIndex) {
+  if (activeAutoScrollTimer) {
+    clearTimeout(activeAutoScrollTimer);
+    activeAutoScrollTimer = null;
+  }
+
   const cleanName = (name || '').trim();
   const needle = cleanName.toLowerCase();
+  const cleanArtist = (artist || '').toLowerCase().trim();
   const targetIndex = Number(originalIndex);
 
   const findRow = () => {
     const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
     for (const row of rows) {
-      const nameEl = row.querySelector('[data-testid="internal-track-link"] span, a[href*="/track/"]');
-      if (nameEl && nameEl.textContent.toLowerCase().trim() === needle) return row;
-    }
-    for (const row of rows) {
-      if (row.textContent.toLowerCase().includes(needle)) return row;
+      const nameEl = row.querySelector('[data-testid="internal-track-link"] span, [data-testid="internal-track-link"], a[href*="/track/"]');
+      if (nameEl) {
+        const text = nameEl.textContent.toLowerCase().trim();
+        if (text === needle || text.includes(needle) || needle.includes(text)) {
+          return row;
+        }
+      }
+      const rowText = row.textContent.toLowerCase();
+      if (rowText.includes(needle)) {
+        if (!cleanArtist || rowText.includes(cleanArtist)) {
+          return row;
+        }
+      }
     }
     return null;
   };
 
-  let found = findRow();
-
-  // If not currently rendered, perform an adaptive step-scroll to bring it into view
-  if (!found) {
-    const container = getSpotifyScrollContainer();
-    if (container) {
-      const getRenderedIndexRange = () => {
-        const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
-        let min = Infinity, max = -Infinity;
-        rows.forEach(r => {
-          const ariaRow = r.getAttribute('aria-rowindex');
-          if (ariaRow) {
-            const idx = parseInt(ariaRow, 10);
-            if (!isNaN(idx)) {
-              if (idx < min) min = idx;
-              if (idx > max) max = idx;
-            }
-          }
-        });
-        return { min, max };
-      };
-
-      const maxSteps = 40;
-      let steps = 0;
-      const stepSize = 650; // pixels per step (~12 tracks)
-
-      while (!found && steps < maxSteps) {
-        steps++;
-        const { min, max } = getRenderedIndexRange();
-
-        let direction = 1; // default scroll down
-        if (targetIndex && min !== Infinity && targetIndex < min) {
-          direction = -1; // scroll up if target is above
-        }
-
-        const prevScroll = container.scrollTop;
-        container.scrollBy({ top: direction * stepSize, behavior: 'smooth' });
-
-        // Allow Spotify's virtual list to mount the newly visible chunk
-        await new Promise(r => setTimeout(r, 140));
-
-        found = findRow();
-
-        // Stop if we hit the boundary and cannot scroll further
-        if (Math.abs(container.scrollTop - prevScroll) < 5 && steps > 2) {
-          break;
-        }
-      }
-    }
-  }
-
-  // Highlight and focus the target row
-  if (found) {
-    found.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    found.style.outline = '3px solid #1ed760';
-    found.style.boxShadow = '0 0 16px rgba(30, 215, 96, 0.7)';
-    found.style.borderRadius = '4px';
-    found.style.transition = 'all 0.3s ease-in-out';
-
-    // Simulate hover so Spotify activates the row actions (··· menu)
-    found.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+  const highlightRow = (row) => {
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.style.outline = '3px solid #1ed760';
+    row.style.boxShadow = '0 0 20px rgba(30, 215, 96, 0.8)';
+    row.style.borderRadius = '4px';
+    row.style.transition = 'all 0.3s ease-in-out';
+    row.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
 
     setTimeout(() => {
-      found.style.outline = '';
-      found.style.boxShadow = '';
-      found.style.borderRadius = '';
-    }, 3500);
-  } else {
-    console.warn(`[Culler v2] Could not locate track "${cleanName}" in Spotify DOM.`);
+      row.style.outline = '';
+      row.style.boxShadow = '';
+      row.style.borderRadius = '';
+    }, 4000);
+  };
+
+  // 1. If track is already rendered, highlight immediately
+  let found = findRow();
+  if (found) {
+    highlightRow(found);
+    return;
   }
+
+  // 2. Locate the Spotify scroll container
+  const container = getSpotifyScrollContainer();
+  if (!container) return;
+
+  // 3. Continuous auto-scroll loop
+  const getRenderedIndices = () => {
+    const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
+    let min = Infinity, max = -Infinity;
+    rows.forEach(r => {
+      const idx = parseInt(r.getAttribute('aria-rowindex'), 10);
+      if (!isNaN(idx)) {
+        if (idx < min) min = idx;
+        if (idx > max) max = idx;
+      }
+    });
+    return { min, max };
+  };
+
+  const startTime = Date.now();
+  const maxDurationMs = 10000; // max 10 seconds auto-scrolling
+  let stuckCount = 0;
+
+  return new Promise((resolve) => {
+    const scrollStep = () => {
+      // Check if found in DOM
+      found = findRow();
+      if (found) {
+        activeAutoScrollTimer = null;
+        highlightRow(found);
+        resolve(true);
+        return;
+      }
+
+      if (Date.now() - startTime > maxDurationMs) {
+        activeAutoScrollTimer = null;
+        console.warn(`[Culler v2] Auto-scroll timed out looking for: ${cleanName}`);
+        resolve(false);
+        return;
+      }
+
+      // Determine direction (down vs up)
+      const { min, max } = getRenderedIndices();
+      let dir = 1;
+      if (targetIndex && min !== Infinity && targetIndex < min) {
+        dir = -1;
+      }
+
+      const stepPx = dir * 320;
+
+      // 1. Move scroll position directly
+      const prevTop = container.scrollTop;
+      container.scrollTop += stepPx;
+
+      // 2. Dispatch synthetic wheel and scroll events so Spotify's listeners react
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: stepPx, bubbles: true, cancelable: true }));
+      container.dispatchEvent(new Event('scroll', { bubbles: true }));
+
+      // Also scroll window if container is root element
+      if (container === document.documentElement || container === document.body) {
+        window.scrollBy(0, stepPx);
+      }
+
+      // Check boundary stuck condition
+      if (Math.abs(container.scrollTop - prevTop) < 2) {
+        stuckCount++;
+        if (stuckCount > 15) {
+          activeAutoScrollTimer = null;
+          console.warn(`[Culler v2] Auto-scroll reached edge without finding: ${cleanName}`);
+          resolve(false);
+          return;
+        }
+      } else {
+        stuckCount = 0;
+      }
+
+      // Schedule next scroll tick (~40ms gives Spotify's React virtual DOM optimal time to render)
+      activeAutoScrollTimer = setTimeout(scrollStep, 40);
+    };
+
+    activeAutoScrollTimer = setTimeout(scrollStep, 40);
+  });
 }
 
 // ── DOM Playback Telemetry ───────────────────────────────────────────────────
