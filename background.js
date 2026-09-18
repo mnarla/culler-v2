@@ -206,10 +206,12 @@ async function onTrackPlaybackEvent(event) {
   session.events.push(event);
   await setActiveSession(session);
 
-  // Accumulate cumulative telemetry history
-  const history = await getTelemetryHistory();
-  history.push(event);
-  await setTelemetryHistory(history);
+  // Accumulate cumulative telemetry history (scoped per playlist)
+  const allHistory = await getTelemetryHistory();
+  const pid = session.playlistId || '__global__';
+  if (!allHistory[pid]) allHistory[pid] = []; // ponytail: flat array fallback not needed, playlistId always present when session is active
+  allHistory[pid].push(event);
+  await setTelemetryHistory(allHistory);
 
   return { success: true, count: session.events.length };
 }
@@ -283,7 +285,8 @@ async function onRunBatchPredictions() {
   }
 
   // Safe exclusion filtering: only hard-protect explicitly kept tracks
-  const history = await getTelemetryHistory();
+  const allHistory = await getTelemetryHistory();
+  const history = allHistory[playlist.playlistId] || [];
   const reviewed = await getReviewedTracks();
   const keptKeys = new Set();
   
@@ -487,7 +490,8 @@ async function onRunCalibration() {
 
   const hasSessionEvents = session && session.events && session.events.length > 0;
   const hasUserOverrides = reviewed && reviewed.kept && reviewed.kept.length > 0;
-  const history = await getTelemetryHistory();
+  const allHistory = await getTelemetryHistory();
+  const history = allHistory[session?.playlistId] || [];
 
   if (!hasSessionEvents && !hasUserOverrides && (!history || history.length === 0)) {
     throw new Error('No listening telemetry or review feedback available to calibrate from.');
