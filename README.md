@@ -1,6 +1,12 @@
-# Culler v2
+<p align="center">
+  <img src="icons/icon.svg" alt="Culler v2 Icon" width="96" height="96" />
+</p>
 
-A lightweight Chrome extension that watches your listening habits on Spotify Web, flags songs you've probably outgrown in large playlists, and helps you jump straight to them to clean things up manually.
+<h1 align="center">Culler v2</h1>
+
+<p align="center">
+  A lightweight Chrome extension that watches your listening habits on Spotify Web, flags songs you've probably outgrown in large playlists, and helps you jump straight to them to clean things up manually.
+</p>
 
 > **Note:** This is an unofficial, personal project for educational use. It is not affiliated with or endorsed by Spotify. It works by inspecting Spotify Web's internal GraphQL queries in the browser rather than using Spotify's official developer API, so breaking changes on their end may happen.
 
