@@ -73,13 +73,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 let activeAutoScrollTimer = null;
 
 function getSpotifyScrollContainer() {
-  // 1. Direct target confirmed via DevTools: Spotify Web uses <main> as the scroll container
-  const main = document.querySelector('main');
-  if (main && main.scrollHeight > main.clientHeight) {
-    return main;
+  // Directly finds the scrollable container that contains the playlist rows
+  const allDivs = document.querySelectorAll('div');
+  for (const el of allDivs) {
+    if (el.scrollHeight > el.clientHeight && el.clientHeight > 200) {
+      if (el.querySelector('[data-testid="tracklist-row"], [data-testid="playlist-page"]')) {
+        return el;
+      }
+    }
   }
 
-  // 2. Climb up from tracklist row to find any scrolling parent
+  // Fallback: walk up from a tracklist row
   const row = document.querySelector('[data-testid="tracklist-row"]');
   if (row) {
     let p = row.parentElement;
@@ -91,8 +95,7 @@ function getSpotifyScrollContainer() {
     }
   }
 
-  // 3. Fallbacks
-  return main || document.scrollingElement || document.documentElement;
+  return document.querySelector('main') || document.documentElement;
 }
 
 async function scrollToTrack(name, artist, originalIndex) {
