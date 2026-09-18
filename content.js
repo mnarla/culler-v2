@@ -68,12 +68,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// ── Scroll to Track ──────────────────────────────────────────────────────────
+// ── Filter / Scroll to Track in Spotify ──────────────────────────────────────
 
 async function scrollToTrack(name, artist, originalIndex) {
-  const needle = (name || '').toLowerCase().trim();
+  const cleanName = (name || '').trim();
+  const needle = cleanName.toLowerCase();
 
-  // Helper to find the row if it exists in DOM
+  // Strategy 1: Use Spotify's native in-playlist filter search bar
+  // Spotify has an input with role="search" or placeholder "Search in playlist" / "Filter"
+  // or a search button with [data-testid="filter-input"] or button inside the action bar
+  let filterInput = document.querySelector('input[data-testid="filter-input"], input[role="search"], input[placeholder*="Search in playlist" i], input[placeholder*="Filter" i]');
+
+  if (!filterInput) {
+    // Look for the search/filter toggle button in the playlist action bar and click it to open the input
+    const searchBtn = document.querySelector('button[data-testid="filter-button"], button[aria-label*="Search in playlist" i], button[aria-label*="Filter" i]');
+    if (searchBtn) {
+      searchBtn.click();
+      await new Promise(r => setTimeout(r, 150));
+      filterInput = document.querySelector('input[data-testid="filter-input"], input[role="search"], input[placeholder*="Search in playlist" i], input[placeholder*="Filter" i]');
+    }
+  }
+
+  if (filterInput) {
+    // Focus, enter text, and dispatch React input events
+    filterInput.focus();
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    if (nativeInputValueSetter) {
+      nativeInputValueSetter.call(filterInput, cleanName);
+    } else {
+      filterInput.value = cleanName;
+    }
+    filterInput.dispatchEvent(new Event('input', { bubbles: true }));
+    filterInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // Wait for Spotify to filter the list
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  // Strategy 2: Find the row (now at the top of the filtered list or already visible) and highlight it
   const findRow = () => {
     const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
     for (const row of rows) {
@@ -83,34 +115,20 @@ async function scrollToTrack(name, artist, originalIndex) {
     for (const row of rows) {
       if (row.textContent.toLowerCase().includes(needle)) return row;
     }
-    return null;
+    return rows[0] || null;
   };
 
   let found = findRow();
-
-  // If not found in DOM and we have an index, force scroll the virtual container
-  if (!found && typeof originalIndex === 'number' && originalIndex > 0) {
-    const scrollContainer = document.querySelector('.os-viewport') || window;
-    // Spotify playlist rows are exactly 56px high. originalIndex is 1-based.
-    const estimatedTop = (originalIndex - 1) * 56;
-    
-    if (scrollContainer.scrollTo) {
-      scrollContainer.scrollTo({ top: Math.max(0, estimatedTop - 200), behavior: 'smooth' });
-    }
-    
-    // Wait for Spotify's React tree to mount the virtual rows
-    await new Promise(r => setTimeout(r, 600));
-    found = findRow();
-  }
 
   if (found) {
     found.scrollIntoView({ behavior: 'smooth', block: 'center' });
     found.style.outline = '2px solid #1ed760';
     found.style.borderRadius = '4px';
+    found.style.transition = 'outline 0.2s ease-in-out';
     setTimeout(() => {
       found.style.outline = '';
       found.style.borderRadius = '';
-    }, 2500);
+    }, 3000);
   }
 }
 

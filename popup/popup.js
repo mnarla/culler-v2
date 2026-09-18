@@ -536,7 +536,7 @@ function renderReviewQueue(tracks) {
     `;
 
     el.addEventListener('click', () => {
-      // Tell content.js to scroll to and highlight this track in Spotify
+      // 1. Tell content.js to filter and highlight this track in Spotify
       chrome.tabs.query({ url: '*://open.spotify.com/*', active: true, currentWindow: true }, (tabs) => {
         const tab = tabs[0] || null;
         if (!tab) return;
@@ -548,9 +548,19 @@ function renderReviewQueue(tracks) {
         });
       });
 
+      // 2. Also copy track name to clipboard as convenient backup
+      if (navigator.clipboard && track.name) {
+        navigator.clipboard.writeText(track.name).catch(() => {});
+      }
+
       // Visual feedback on the row
       el.style.outline = '1px solid var(--accent-green, #1ed760)';
-      setTimeout(() => { el.style.outline = ''; }, 1200);
+      const jumpLabel = el.querySelector('.item-title-row span:last-child');
+      if (jumpLabel) jumpLabel.textContent = 'Filtered 🔍';
+      setTimeout(() => {
+        el.style.outline = '';
+        if (jumpLabel) jumpLabel.textContent = 'Jump ↗';
+      }, 1500);
     });
 
     reviewQueueList.appendChild(el);
