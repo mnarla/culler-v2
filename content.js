@@ -73,38 +73,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 let activeAutoScrollTimer = null;
 
 function getSpotifyScrollContainer() {
-  // 1. First priority: Climb directly up from the playlist page or tracklist grid itself
-  // This guarantees we find the exact scroll container holding the songs, never the sidebar!
-  const playlistElement = document.querySelector('[data-testid="tracklist-row"], [data-testid="playlist-page"], [role="grid"]');
-  if (playlistElement) {
-    let curr = playlistElement.parentElement;
-    while (curr && curr !== document.body) {
-      if (curr.scrollHeight > curr.clientHeight + 20) {
-        const style = window.getComputedStyle(curr);
-        const overflow = style.overflowY;
-        if (overflow === 'auto' || overflow === 'scroll' || overflow === 'overlay') {
-          return curr;
+  // 1. Look inside main content area first
+  const main = document.querySelector('main, #main, [data-testid="playlist-page"]');
+  if (main) {
+    const mainVp = main.querySelector('[data-overlayscrollbars-viewport], .os-viewport');
+    if (mainVp && mainVp.scrollHeight > mainVp.clientHeight) return mainVp;
+
+    const row = main.querySelector('[data-testid="tracklist-row"]');
+    if (row) {
+      let p = row.parentElement;
+      while (p && p !== document.body) {
+        if (p.scrollHeight > p.clientHeight + 20) {
+          const style = window.getComputedStyle(p);
+          if (style.overflowY === 'auto' || style.overflowY === 'scroll' || style.overflowY === 'overlay') {
+            return p;
+          }
         }
+        p = p.parentElement;
       }
-      curr = curr.parentElement;
     }
   }
 
-  // 2. Look for the main content area's specific viewport (explicitly exclude sidebar/nav)
-  const mainViewport = document.querySelector('main [data-overlayscrollbars-viewport], .main-view-container [data-overlayscrollbars-viewport], .Root__main-view [data-overlayscrollbars-viewport]');
-  if (mainViewport && mainViewport.scrollHeight > mainViewport.clientHeight) {
-    return mainViewport;
+  // 2. Pick the widest viewport on screen (main view is ~1000px+ wide, sidebar is only ~280px)
+  const viewports = Array.from(document.querySelectorAll('[data-overlayscrollbars-viewport], .os-viewport'));
+  if (viewports.length > 0) {
+    viewports.sort((a, b) => b.clientWidth - a.clientWidth);
+    return viewports[0];
   }
 
-  // 3. Fallback to main element or main-view-container
-  const mainNode = document.querySelector('main, .main-view-container, .Root__main-view');
-  if (mainNode) {
-    const vp = mainNode.querySelector('.os-viewport, [data-overlayscrollbars-viewport]');
-    if (vp) return vp;
-    return mainNode;
-  }
-
-  return document.scrollingElement || document.documentElement;
+  return document.querySelector('main') || document.scrollingElement || document.documentElement;
 }
 
 async function scrollToTrack(name, artist, originalIndex) {
@@ -118,8 +115,10 @@ async function scrollToTrack(name, artist, originalIndex) {
   const cleanArtist = (artist || '').toLowerCase().trim();
   const targetIndex = Number(originalIndex);
 
+  const getMainRoot = () => document.querySelector('main, #main, [data-testid="playlist-page"]') || document;
+
   const findRow = () => {
-    const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
+    const rows = getMainRoot().querySelectorAll('[data-testid="tracklist-row"]');
     for (const row of rows) {
       const nameEl = row.querySelector('[data-testid="internal-track-link"] span, [data-testid="internal-track-link"], a[href*="/track/"]');
       if (nameEl) {
@@ -160,13 +159,13 @@ async function scrollToTrack(name, artist, originalIndex) {
     return;
   }
 
-  // 2. Locate the Spotify scroll container
+  // 2. Locate the Spotify scroll container (guaranteed to be the main view)
   const container = getSpotifyScrollContainer();
   if (!container) return;
 
   // 3. Continuous auto-scroll loop
   const getRenderedIndices = () => {
-    const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
+    const rows = getMainRoot().querySelectorAll('[data-testid="tracklist-row"]');
     let min = Infinity, max = -Infinity;
     rows.forEach(r => {
       const idx = parseInt(r.getAttribute('aria-rowindex'), 10);
