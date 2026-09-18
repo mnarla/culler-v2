@@ -6,7 +6,7 @@
  */
 
 import { generateContent } from './lib/gemini.js';
-import { buildBatchScoringPrompt, buildCalibrationPrompt, buildPlaylistProfileHeader, buildBatchScoringPromptForChunk } from './lib/heuristics.js';
+import { buildCalibrationPrompt, buildPlaylistProfileHeader, buildBatchScoringPromptForChunk } from './lib/heuristics.js';
 import { parsePathfinderPlaylistPayload, mergePlaylistBatches } from './lib/parser.js';
 import {
   getApiKey,
@@ -18,7 +18,6 @@ import {
   getCurrentPlaylist,
   setCurrentPlaylist,
   setCullReport,
-  getCullReport,
   getReviewedTracks,
   setReviewedTracks,
 } from './lib/storage.js';
