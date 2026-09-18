@@ -37,6 +37,14 @@ window.addEventListener('message', (event) => {
       payload: event.data.payload,
       authHeader: event.data.authHeader,
       url: event.data.url,
+      urlPlaylistId: event.data.urlPlaylistId || null,
+    });
+  } else if (event.data.type === 'CULLER_PLAYLIST_SWITCHED') {
+    // User navigated from one Spotify playlist to a different one — clear old state immediately
+    safeSendMessage({
+      type: 'CULLER_PLAYLIST_SWITCHED',
+      fromPlaylistId: event.data.fromPlaylistId,
+      toPlaylistId: event.data.toPlaylistId,
     });
   } else if (event.data.type === 'CULLER_AUTH_EXPIRED') {
     safeSendMessage({

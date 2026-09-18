@@ -22,6 +22,7 @@ import {
   getReviewedTracks,
   setReviewedTracks,
   getCheckedTracks,
+  setCheckedTracks,
   getTelemetryHistory,
   setTelemetryHistory,
 } from './lib/storage.js';
@@ -43,7 +44,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleMessage(message, sender) {
   switch (message.type) {
     case 'CULLER_INTERCEPTED_PLAYLIST':
-      return onPlaylistIntercepted(message.payload, message.authHeader, message.url, sender?.tab?.url || sender?.url);
+      return onPlaylistIntercepted(message.payload, message.authHeader, message.url, sender?.tab?.url || sender?.url, message.urlPlaylistId);
+
+    case 'CULLER_PLAYLIST_SWITCHED':
+      return onPlaylistSwitched(message.fromPlaylistId, message.toPlaylistId);
 
     case 'CULLER_START_SESSION':
       return onStartSession(message.playlistId, message.playlistName);
@@ -97,6 +101,20 @@ async function onFetchFullPlaylist(startOffset, totalExpected) {
       }
     });
   });
+}
+
+// ── Playlist Switch (URL-level detection, fires before GraphQL response) ──────
+
+/**
+ * Called immediately when the user navigates to a different Spotify playlist URL.
+ * Fires BEFORE any GraphQL response arrives, so the popup sees a clean slate.
+ */
+async function onPlaylistSwitched(fromPlaylistId, toPlaylistId) {
+  console.log(`[Culler Background] Playlist switch detected: "${fromPlaylistId}" → "${toPlaylistId}". Clearing predictions.`);
+  await setCullReport(null);
+  await setCheckedTracks({});
+  await setCurrentPlaylist(null);
+  return { success: true, cleared: true, toPlaylistId };
 }
 
 // ── Session Event Handlers ───────────────────────────────────────────────────
@@ -216,7 +234,7 @@ async function onTrackPlaybackEvent(event) {
   return { success: true, count: session.events.length };
 }
 
-async function onPlaylistIntercepted(rawPayload, authHeader, requestUrl, tabUrl) {
+async function onPlaylistIntercepted(rawPayload, authHeader, requestUrl, tabUrl, urlPlaylistId) {
   const batch = parsePathfinderPlaylistPayload(rawPayload);
 
   // If this specific query doesn't match, do not overwrite any already-loaded valid playlist
@@ -225,12 +243,17 @@ async function onPlaylistIntercepted(rawPayload, authHeader, requestUrl, tabUrl)
     return { success: false, schemaMismatch: true, warnings: batch.warnings };
   }
 
-  // Robust playlist ID fallback from Spotify URI or URL parameters
+  // Resolve playlist ID: prefer GraphQL-extracted ID, then the URL from the page (most reliable),
+  // then regex-fallback from the request/tab URL
   if (!batch.playlistId) {
-    const urlToCheck = requestUrl || tabUrl || '';
-    const match = urlToCheck.match(/playlist[/:]([a-zA-Z0-9]{22})/);
-    if (match && match[1]) {
-      batch.playlistId = match[1];
+    if (urlPlaylistId) {
+      batch.playlistId = urlPlaylistId;
+    } else {
+      const urlToCheck = requestUrl || tabUrl || '';
+      const match = urlToCheck.match(/playlist[/:]([a-zA-Z0-9]{22})/);
+      if (match && match[1]) {
+        batch.playlistId = match[1];
+      }
     }
   }
 

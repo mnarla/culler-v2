@@ -1,0 +1,74 @@
+{
+  "background.js": {
+    "mtime": 1789712330.7620556,
+    "seen": 1789712948.715351,
+    "ast_hash": "57e8e7b7eac831196026c00367fbb163",
+    "semantic_hash": "57e8e7b7eac831196026c00367fbb163"
+  },
+  "config/constants.js": {
+    "mtime": 1789705701.5787385,
+    "seen": 1789712948.7153542,
+    "ast_hash": "36fe84f4ec6c2168a8b6bb5e9680c737",
+    "semantic_hash": "36fe84f4ec6c2168a8b6bb5e9680c737"
+  },
+  "content.js": {
+    "mtime": 1789712306.1425788,
+    "seen": 1789712948.715355,
+    "ast_hash": "e4315e70e6c198422336cd49f26faf15",
+    "semantic_hash": "e4315e70e6c198422336cd49f26faf15"
+  },
+  "injected.js": {
+    "mtime": 1789704598.2050908,
+    "seen": 1789712948.7153559,
+    "ast_hash": "00aa0ae074399edcf203ced49a5260a9",
+    "semantic_hash": "00aa0ae074399edcf203ced49a5260a9"
+  },
+  "lib/gemini.js": {
+    "mtime": 1789704598.2056766,
+    "seen": 1789712948.7153568,
+    "ast_hash": "66747ba05f589bded07e4e27b465d759",
+    "semantic_hash": "66747ba05f589bded07e4e27b465d759"
+  },
+  "lib/heuristics.js": {
+    "mtime": 1789704598.205978,
+    "seen": 1789712948.7153568,
+    "ast_hash": "32699158fa2667c79bc119dc1379eccb",
+    "semantic_hash": "32699158fa2667c79bc119dc1379eccb"
+  },
+  "lib/parser.js": {
+    "mtime": 1789712336.8861315,
+    "seen": 1789712948.715358,
+    "ast_hash": "57806c33bb85a85992c068e3f3d65708",
+    "semantic_hash": "57806c33bb85a85992c068e3f3d65708"
+  },
+  "lib/storage.js": {
+    "mtime": 1789706397.564538,
+    "seen": 1789712948.715358,
+    "ast_hash": "485b0de742b32c3207ca897ad4216606",
+    "semantic_hash": "485b0de742b32c3207ca897ad4216606"
+  },
+  "manifest.json": {
+    "mtime": 1789532820.4056504,
+    "seen": 1789712948.715359,
+    "ast_hash": "3d3eb3e0ec1c5246bd09d647ff815d31",
+    "semantic_hash": "3d3eb3e0ec1c5246bd09d647ff815d31"
+  },
+  "package.json": {
+    "mtime": 1789605654.602847,
+    "seen": 1789712948.715359,
+    "ast_hash": "b515fd252dd378115174768b38206ae0",
+    "semantic_hash": "b515fd252dd378115174768b38206ae0"
+  },
+  "popup/popup.js": {
+    "mtime": 1789711874.7374206,
+    "seen": 1789712948.71536,
+    "ast_hash": "acfad360999ebfecfde9164ea310351e",
+    "semantic_hash": "acfad360999ebfecfde9164ea310351e"
+  },
+  "tests/test_gemini_quality.js": {
+    "mtime": 1789704598.208195,
+    "seen": 1789712948.71536,
+    "ast_hash": "06c4958730775144db30d244b7f50d18",
+    "semantic_hash": "06c4958730775144db30d244b7f50d18"
+  }
+}

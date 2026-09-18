@@ -67,6 +67,8 @@
               payload: payload,
               authHeader: authHeader,
               url: url,
+              // Always include the playlist ID from the current page URL for reliable switch detection
+              urlPlaylistId: _getPlaylistIdFromUrl(window.location.pathname),
             }, '*');
           }
         }).catch(() => {
@@ -79,6 +81,51 @@
 
     return response;
   };
+
+  // ── Playlist URL Switch Detection ──────────────────────────────────────────
+
+  /**
+   * Extract the Spotify playlist ID from a pathname like /playlist/37i9dQZF1DX...
+   * Returns null for any other path (artist page, album, etc.)
+   */
+  function _getPlaylistIdFromUrl(pathname) {
+    const m = (pathname || '').match(/^\/playlist\/([a-zA-Z0-9]{22})(?:\/|$)/);
+    return m ? m[1] : null;
+  }
+
+  let _lastKnownPlaylistId = _getPlaylistIdFromUrl(window.location.pathname);
+
+  function _checkForPlaylistSwitch() {
+    const current = _getPlaylistIdFromUrl(window.location.pathname);
+    if (current && _lastKnownPlaylistId && current !== _lastKnownPlaylistId) {
+      console.log(`[Culler v2] Playlist navigated: "${_lastKnownPlaylistId}" → "${current}"`);
+      window.postMessage({
+        type: 'CULLER_PLAYLIST_SWITCHED',
+        fromPlaylistId: _lastKnownPlaylistId,
+        toPlaylistId: current,
+      }, '*');
+    }
+    if (current) {
+      _lastKnownPlaylistId = current;
+    }
+  }
+
+  // Patch history.pushState and history.replaceState so SPA navigations fire an event
+  const _origPushState = history.pushState.bind(history);
+  const _origReplaceState = history.replaceState.bind(history);
+
+  history.pushState = function (...args) {
+    _origPushState(...args);
+    _checkForPlaylistSwitch();
+  };
+
+  history.replaceState = function (...args) {
+    _origReplaceState(...args);
+    _checkForPlaylistSwitch();
+  };
+
+  // Also catch browser back/forward
+  window.addEventListener('popstate', _checkForPlaylistSwitch);
 
   // ── Auto-Pagination Loop ───────────────────────────────────────────────────
 
