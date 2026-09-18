@@ -531,13 +531,25 @@ function setupEventListeners() {
 
 function renderReviewQueue(tracks) {
   reviewQueueList.innerHTML = '';
-  if (reviewQueueSubtitle) {
-    reviewQueueSubtitle.textContent = `${tracks.length} track${tracks.length !== 1 ? 's' : ''} queued • click to isolate in Spotify`;
-  }
+  
+  // Track culled status in memory (or initialize from tracks)
+  let culledCount = tracks.filter(t => t.isCulled).length;
+
+  const updateSubtitle = () => {
+    if (reviewQueueSubtitle) {
+      if (culledCount === tracks.length && tracks.length > 0) {
+        reviewQueueSubtitle.textContent = `All ${tracks.length} tracks culled! 🎉`;
+      } else {
+        reviewQueueSubtitle.textContent = `${culledCount} of ${tracks.length} culled • click row to locate`;
+      }
+    }
+  };
+
+  updateSubtitle();
 
   tracks.forEach(track => {
     const el = document.createElement('div');
-    el.className = 'checklist-item queue-row';
+    el.className = `checklist-item queue-row ${track.isCulled ? 'is-culled' : ''}`;
 
     const tierLabel = track.tier === 'HIGH' ? 'HIGH' : (track.tier === 'MODERATE' ? 'MOD' : 'REVIEW');
     const tierClass = track.tier === 'HIGH' ? 'badge-tier-high' : (track.tier === 'MODERATE' ? 'badge-tier-mod' : 'badge-tier-review');
@@ -559,10 +571,16 @@ function renderReviewQueue(tracks) {
           <span>${track.artist}</span>
         </div>
       </div>
+      <button class="btn-cull-toggle" title="${track.isCulled ? 'Click to revert' : 'Mark as culled'}">
+        ${track.isCulled ? '✓ Culled' : 'Mark Done'}
+      </button>
     `;
 
-    el.addEventListener('click', () => {
-      // 1. Tell content.js to filter and highlight this track in Spotify
+    // Row click: Scroll to track in Spotify
+    el.addEventListener('click', (e) => {
+      // If user clicked the toggle button, don't trigger the scroll
+      if (e.target.closest('.btn-cull-toggle')) return;
+
       chrome.tabs.query({ url: '*://open.spotify.com/*', active: true, currentWindow: true }, (tabs) => {
         const tab = tabs[0] || null;
         if (!tab) return;
@@ -574,12 +592,10 @@ function renderReviewQueue(tracks) {
         });
       });
 
-      // 2. Also copy track name to clipboard as convenient backup
       if (navigator.clipboard && track.name) {
         navigator.clipboard.writeText(track.name).catch(() => {});
       }
 
-      // Visual feedback on the row
       el.style.borderColor = 'var(--accent)';
       el.style.boxShadow = '0 0 15px -3px var(--accent-glow)';
       const jumpLabel = el.querySelector('.queue-jump-tag');
@@ -597,6 +613,26 @@ function renderReviewQueue(tracks) {
           `;
         }
       }, 1500);
+    });
+
+    // Toggle button click: Mark culled or revert
+    const toggleBtn = el.querySelector('.btn-cull-toggle');
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      track.isCulled = !track.isCulled;
+      el.classList.toggle('is-culled', track.isCulled);
+      
+      if (track.isCulled) {
+        culledCount++;
+        toggleBtn.textContent = '✓ Culled';
+        toggleBtn.title = 'Click to revert';
+      } else {
+        culledCount = Math.max(0, culledCount - 1);
+        toggleBtn.textContent = 'Mark Done';
+        toggleBtn.title = 'Mark as culled';
+      }
+
+      updateSubtitle();
     });
 
     reviewQueueList.appendChild(el);
