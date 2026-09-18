@@ -68,44 +68,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// ── Filter / Scroll to Track in Spotify ──────────────────────────────────────
+// ── Adaptive Step-Scroll to Track in Spotify ─────────────────────────────────
+
+function getSpotifyScrollContainer() {
+  // 1. Direct overlay scrollbar viewport (Spotify standard)
+  const osViewport = document.querySelector('[data-overlayscrollbars-viewport], .os-viewport');
+  if (osViewport) return osViewport;
+
+  // 2. Climb up from tracklist row or playlist container to find scrollable parent
+  const trackRow = document.querySelector('[data-testid="tracklist-row"], [data-testid="playlist-page"]');
+  if (trackRow) {
+    let curr = trackRow.parentElement;
+    while (curr && curr !== document.body) {
+      const style = window.getComputedStyle(curr);
+      if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && curr.scrollHeight > curr.clientHeight) {
+        return curr;
+      }
+      curr = curr.parentElement;
+    }
+  }
+
+  // 3. Fallbacks
+  return document.querySelector('main') || document.documentElement;
+}
 
 async function scrollToTrack(name, artist, originalIndex) {
   const cleanName = (name || '').trim();
   const needle = cleanName.toLowerCase();
+  const targetIndex = Number(originalIndex);
 
-  // Strategy 1: Use Spotify's native in-playlist filter search bar
-  // Spotify has an input with role="search" or placeholder "Search in playlist" / "Filter"
-  // or a search button with [data-testid="filter-input"] or button inside the action bar
-  let filterInput = document.querySelector('input[data-testid="filter-input"], input[role="search"], input[placeholder*="Search in playlist" i], input[placeholder*="Filter" i]');
-
-  if (!filterInput) {
-    // Look for the search/filter toggle button in the playlist action bar and click it to open the input
-    const searchBtn = document.querySelector('button[data-testid="filter-button"], button[aria-label*="Search in playlist" i], button[aria-label*="Filter" i]');
-    if (searchBtn) {
-      searchBtn.click();
-      await new Promise(r => setTimeout(r, 150));
-      filterInput = document.querySelector('input[data-testid="filter-input"], input[role="search"], input[placeholder*="Search in playlist" i], input[placeholder*="Filter" i]');
-    }
-  }
-
-  if (filterInput) {
-    // Focus, enter text, and dispatch React input events
-    filterInput.focus();
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-    if (nativeInputValueSetter) {
-      nativeInputValueSetter.call(filterInput, cleanName);
-    } else {
-      filterInput.value = cleanName;
-    }
-    filterInput.dispatchEvent(new Event('input', { bubbles: true }));
-    filterInput.dispatchEvent(new Event('change', { bubbles: true }));
-
-    // Wait for Spotify to filter the list
-    await new Promise(r => setTimeout(r, 300));
-  }
-
-  // Strategy 2: Find the row (now at the top of the filtered list or already visible) and highlight it
   const findRow = () => {
     const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
     for (const row of rows) {
@@ -115,20 +106,78 @@ async function scrollToTrack(name, artist, originalIndex) {
     for (const row of rows) {
       if (row.textContent.toLowerCase().includes(needle)) return row;
     }
-    return rows[0] || null;
+    return null;
   };
 
   let found = findRow();
 
+  // If not currently rendered, perform an adaptive step-scroll to bring it into view
+  if (!found) {
+    const container = getSpotifyScrollContainer();
+    if (container) {
+      const getRenderedIndexRange = () => {
+        const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
+        let min = Infinity, max = -Infinity;
+        rows.forEach(r => {
+          const ariaRow = r.getAttribute('aria-rowindex');
+          if (ariaRow) {
+            const idx = parseInt(ariaRow, 10);
+            if (!isNaN(idx)) {
+              if (idx < min) min = idx;
+              if (idx > max) max = idx;
+            }
+          }
+        });
+        return { min, max };
+      };
+
+      const maxSteps = 40;
+      let steps = 0;
+      const stepSize = 650; // pixels per step (~12 tracks)
+
+      while (!found && steps < maxSteps) {
+        steps++;
+        const { min, max } = getRenderedIndexRange();
+
+        let direction = 1; // default scroll down
+        if (targetIndex && min !== Infinity && targetIndex < min) {
+          direction = -1; // scroll up if target is above
+        }
+
+        const prevScroll = container.scrollTop;
+        container.scrollBy({ top: direction * stepSize, behavior: 'smooth' });
+
+        // Allow Spotify's virtual list to mount the newly visible chunk
+        await new Promise(r => setTimeout(r, 140));
+
+        found = findRow();
+
+        // Stop if we hit the boundary and cannot scroll further
+        if (Math.abs(container.scrollTop - prevScroll) < 5 && steps > 2) {
+          break;
+        }
+      }
+    }
+  }
+
+  // Highlight and focus the target row
   if (found) {
     found.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    found.style.outline = '2px solid #1ed760';
+    found.style.outline = '3px solid #1ed760';
+    found.style.boxShadow = '0 0 16px rgba(30, 215, 96, 0.7)';
     found.style.borderRadius = '4px';
-    found.style.transition = 'outline 0.2s ease-in-out';
+    found.style.transition = 'all 0.3s ease-in-out';
+
+    // Simulate hover so Spotify activates the row actions (··· menu)
+    found.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+
     setTimeout(() => {
       found.style.outline = '';
+      found.style.boxShadow = '';
       found.style.borderRadius = '';
-    }, 3000);
+    }, 3500);
+  } else {
+    console.warn(`[Culler v2] Could not locate track "${cleanName}" in Spotify DOM.`);
   }
 }
 
