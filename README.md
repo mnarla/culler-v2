@@ -52,16 +52,17 @@ You don't need days of listening data to get started. Culler works right out of 
 ### 1. Load the Entire Playlist (`Fetch All ⚡`)
 Spotify's web player only loads the first 50–100 tracks when you open a playlist page. If your playlist has more songs, you'll see a **Fetch All (X) ⚡** button. Click this first—it auto-paginates Spotify in the background in clean 50-track batches so Culler has the full playlist captured before you scan or listen.
 
-### 2. (Recommended) Run a 15–20 Track Listening Session
+### 2. Instant Scan Without Listening
+If you just want immediate results without listening first, click **Scan Playlist (No Session)**. Culler runs your playlist against baseline heuristics and returns candidate skips in 3–5 seconds.
+
+### 3. Or: (Recommended) Run a 20-30 Track Listening Session
 Scanning a playlist with zero history works fine for catching obvious outliers (like an acoustic indie ballad buried inside a fast gym playlist). But running a short listening session first gives the calibration loop enough signal to learn your nuanced taste—catching tracks that *fit* the genre on paper, but that you always skip anyway.
 
 1. In the popup, hit **Start Telemetry Session**.
-2. Put the playlist on shuffle and listen as you normally would for around **15 to 20 tracks**. Skip what you don't want to hear right now, and let tracks you like play through.
+2. Put the playlist on shuffle and listen as you normally would for around **20 to 30 tracks**. Skip what you don't want to hear right now, and let tracks you like play through.
 3. Use **Pause Session** anytime you step away or switch to something you don't want recorded.
 4. When finished, hit **Stop & Analyze**. Culler feeds your real skip/keep behavior into the calibration loop, updates its rules, and evaluates your unreviewed tracks.
 
-### 3. Or: Instant Scan Without Listening
-If you just want immediate results without listening first, click **Scan Playlist (No Session)**. Culler runs your playlist against baseline heuristics and returns candidate skips in 3–5 seconds.
 
 ### 4. Review & Locate Tracks (The Review Queue)
 Candidate skips appear grouped by confidence tiers (`HIGH`, `MODERATE`, `WORTH-REVIEWING`):
@@ -104,4 +105,3 @@ Candidate skips appear grouped by confidence tiers (`HIGH`, `MODERATE`, `WORTH-R
 - **Extension:** Chrome Manifest V3 (Service Worker + Content Scripts)
 - **Frontend / Ingestion:** Vanilla JS, MutationObservers, Web History API hooks
 - **Inference:** Google Gemini 3.5 Flash via REST
-- **Styling:** CSS variables, JetBrains Mono, Plus Jakarta Sans
