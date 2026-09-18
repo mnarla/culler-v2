@@ -306,10 +306,28 @@ function setupEventListeners() {
 
   // Pause / Resume Session Button
   if (btnPauseSession) {
-    btnPauseSession.addEventListener('click', () => {
-      chrome.runtime.sendMessage({ type: 'CULLER_PAUSE_SESSION' }, () => {
-        loadSessionState();
-      });
+    btnPauseSession.addEventListener('click', async () => {
+      btnPauseSession.disabled = true;
+      try {
+        const res = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ type: 'CULLER_PAUSE_SESSION' }, (response) => {
+            if (chrome.runtime.lastError) {
+              console.error('[Culler Popup] Pause error:', chrome.runtime.lastError);
+              resolve({ error: chrome.runtime.lastError.message });
+            } else {
+              resolve(response || {});
+            }
+          });
+        });
+        if (res?.error) {
+          alert(`Pause error: ${res.error}`);
+        }
+      } catch (err) {
+        console.error('[Culler Popup] Pause exception:', err);
+      } finally {
+        btnPauseSession.disabled = false;
+        await loadSessionState();
+      }
     });
   }
 

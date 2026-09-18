@@ -140,7 +140,17 @@ const telemetryTimer = setInterval(() => {
     clearInterval(telemetryTimer);
     return;
   }
-  if (!activeSession || !activeSession.isActive) return;
+  if (!activeSession || !activeSession.isActive || activeSession.isPaused) {
+    if (activeSession?.isPaused && currentTrackState.title) {
+      currentTrackState = {
+        title: null,
+        artist: null,
+        maxPositionSec: 0,
+        durationSec: null,
+      };
+    }
+    return;
+  }
 
   const titleEl = document.querySelector('[data-testid="context-item-info-title"]');
   const artistEl = document.querySelector('[data-testid="context-item-info-artist"]');
@@ -199,6 +209,7 @@ function parseSeconds(str) {
 
 function evaluateAndReportTrack(trackState) {
   if (!trackState || !trackState.title) return;
+  if (activeSession?.isPaused) return;
 
   // Silently drop advertisements
   if (trackState.isAd || isAdvertisement(trackState.title, trackState.artist)) {
