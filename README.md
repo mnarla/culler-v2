@@ -1,102 +1,79 @@
 # Culler v2
 
-A Chrome extension that intercepts live Spotify web sessions, learns user skip/keep habits via natural playback telemetry, and uses Gemini Flash heuristics to cull bloated playlists with assisted in-browser manual review.
+A lightweight Chrome extension that watches your listening habits on Spotify Web, flags songs you've probably outgrown in large playlists, and helps you jump straight to them to clean things up manually.
 
-Evolved from [Culler v1](https://github.com/mnarla/culler) (an offline experiment exploring local 8B self-correction loops on an old Dell server). Culler v2 trades offline batch processing and synthetic scrobble proxies for real-time telemetry, zero-credential network interception, and instant cloud-assisted curation.
-
----
-
-## Why v2? (Comparing to Culler v1)
-
-In Culler v1, auditing an 820-track playlist required:
-1. Manually downloading an [Exportify](https://exportify.app/) CSV.
-2. Enriching tracks via Last.fm API keys (which only had lifetime play counts, missing whether you still liked the track *recently*).
-3. Running local quantized GGUFs over SSH on an Intel i7 CPU server (~41 hours estimated for 820 tracks at ~250s/track).
-4. Reviewing static database tables without an easy way to locate tracks inside Spotify.
-
-**Culler v2 rebuilds the entire workflow directly in the browser:**
-- **No Spotify API keys required:** Intercepts Spotify's internal Pathfinder GraphQL queries directly in the client (`injected.js` in `MAIN` world).
-- **True listening telemetry:** Automatically records skips vs. keeps as you listen in Spotify web (`< 20%` duration = skip, `> 65%` = keep) instead of relying on stale lifetime scrobbles.
-- **Fast batch inference:** Full 800+ track playlists are evaluated in ~3–5 seconds using parallel chunked Gemini Flash calls instead of 40+ hours on CPU.
-- **Assisted Manual Review:** A dedicated Review Queue scrolls Spotify's virtualized player directly to candidate rows and highlights them, eliminating the pain of manually searching through massive playlists.
+> **Note:** This is an unofficial, personal project for educational use. It is not affiliated with or endorsed by Spotify. It works by inspecting Spotify Web's internal GraphQL queries in the browser rather than using Spotify's official developer API, so breaking changes on their end may happen.
 
 ---
 
-## Architecture & Data Flow
+## Why v2?
+
+[Culler v1](https://github.com/mnarla/culler) was a fun proof-of-concept for running an 8B model locally on an old laptop, but using it in practice was painful. You had to manually export CSVs with Exportify, pull play counts from Last.fm (which only told you if you liked a song four years ago, not today), and wait almost two days for CPU inference to finish on an 800-song playlist. Even then, you were left staring at a spreadsheet and still had to find and remove every track by hand.
+
+v2 moves everything directly into the browser. It monitors your skips in real-time as you listen on Spotify Web, passes the playlist to Gemini Flash in small parallel chunks so it finishes in a few seconds, and gives you a queue that scrolls you directly to candidate songs so you can delete them yourself.
+
+---
+
+## How It Works
 
 ```mermaid
 flowchart TD
-    subgraph SpotifyPage [open.spotify.com Tab]
-        A[Spotify Web UI / Pathfinder GraphQL] -->|Intercept Fetch Stream| B[injected.js - MAIN World]
-        B -->|Relay Payload & URL State| C[content.js - ISOLATED World]
-        D[DOM Player Bar Observer] -->|Position & Duration Telemetry| C
-        C -->|Assisted Jump & Highlight| D
+    subgraph SpotifyTab [open.spotify.com Tab]
+        A[Spotify Web Client] -->|Fetch query| B[injected.js]
+        B -->|Relay payload| C[content.js]
+        D[Player Bar Observer] -->|Play duration & skips| C
+        C -->|Jump & highlight| D
     end
 
-    subgraph MV3 [Chrome Extension Runtime]
-        C -->|chrome.runtime.sendMessage| E[background.js - Service Worker]
-        E <-->|Encrypted Local Storage| F[(chrome.storage.local)]
-        G[popup UI - Controller & Review Queue] <-->|Event Dispatch| E
+    subgraph ChromeExtension [MV3 Extension]
+        C -->|Runtime message| E[background.js]
+        E <-->|Local state| F[(chrome.storage.local)]
+        G[Popup UI] <-->|User review| E
     end
 
-    subgraph AI [Google AI Studio]
-        E -->|Telemetry History + Active Rules| H[Gemini 1.5/3.5 Flash]
-        H -->|Calibrated Heuristics + Scored Skips| E
+    subgraph LLM [Google AI Studio]
+        E -->|Track list + skip history| H[Gemini Flash API]
+        H -->|Ranked skips| E
     end
 ```
 
----
+### The Workflow
 
-## Key Features
-
-### 1. Non-Destructive Pathfinder Interception & Auto-Pagination
-- Listens to Spotify’s internal GraphQL API (`pathfinder/v2/query`) without altering payloads or triggering anti-bot protections.
-- Includes a built-in auto-pagination engine that fetches up to 1,000+ tracks in 50-track batches with token expiry circuit breakers (`401`/`403` detection).
-- Tracks SPA route changes via History API patching (`pushState`/`replaceState`) to isolate playlists and prevent predictions from bleeding across different albums or playlists.
-
-### 2. Live Passive Telemetry & Calibration
-- Tracks song progression without audio fingerprinting.
-- Filters out Spotify ads automatically so ads never poison the skip/keep calibration data.
-- User overrides during review (keeping a suggested skip) feed directly back into prompt heuristics as negative feedback for continuous calibration.
-
-### 3. Assisted Manual Review & Virtual Scroller (Zero Write Access)
-- **100% Read-Only Safety:** Culler never requests write permissions, never calls playlist mutation endpoints, and never modifies playlists automatically.
-- **Assisted Jump-to-Track:** Instead of making you search through hundreds of songs manually, the **Review Queue** scrolls the Spotify web player directly to the flagged song and temporarily highlights the row.
-- **You Remain in Control:** You decide whether to remove it using Spotify's standard interface (clicking Spotify's `...` menu or pressing Delete) or keep it in your rotation.
+1. **Passive Telemetry:** While you listen to music on Spotify Web, Culler tracks playback duration behind the scenes. Tracks skipped before reaching 20% count as skips, while anything played past 65% counts as a keep. Ads are detected and discarded automatically so they don't mess up your data.
+2. **Fast Evaluation:** When you trigger a scan, the playlist is batched into chunks and evaluated by Gemini Flash using your listening history as ground truth. An 800+ track playlist finishes in about 3–5 seconds.
+3. **Assisted Review (Zero Write Access):** The extension is strictly read-only. It has no write permissions, never calls delete endpoints, and cannot alter your playlists on its own. Instead, clicking a track in the Review Queue auto-scrolls Spotify's virtualized list directly to that row and highlights it, so you can decide whether to press Delete or keep it. If you choose to keep a flagged track, that override is saved to tune future scans.
 
 ---
 
-## v1 vs. v2 Comparison
+## v1 vs. v2
 
 | Feature | Culler v1 | Culler v2 |
 | :--- | :--- | :--- |
-| **Runtime** | Python / SSH on Dell Latitude 5500 CPU | Manifest V3 Chrome Extension |
-| **Spotify Data** | Exportify manual CSV dump | In-page GraphQL stream interception |
-| **Ground Truth** | Manual binary labels + Last.fm lifetime scrobbles | Passive playback telemetry (skip `<20%`, keep `>65%`) |
-| **Inference Engine** | Local Qwen3 8B Q4_K_M (`llama-cpp-python`) | Gemini 1.5 / 3.5 Flash (BYOK API Key) |
-| **Speed (820 tracks)** | ~41 hours (CPU bound) | ~3 to 5 seconds (parallel chunks) |
-| **Removal Workflow** | Manual cross-reference with CSV | Assisted manual review (virtual scroll & highlight; zero writes) |
-| **Storage** | SQLite (`skip_predictor.db`) | `chrome.storage.local` |
+| **Setup** | Python + SSH on a dedicated Dell laptop | Unpacked Chrome extension (MV3) |
+| **Data Source** | Manual Exportify CSV export | Live in-browser GraphQL stream |
+| **Ground Truth** | Manual labels + Last.fm lifetime playcounts | Real-time playback telemetry |
+| **Inference** | Local Qwen3 8B on CPU (~250s/track) | Gemini 3.5 Flash (~3–5s for 800+ tracks) |
+| **Track Cleanup** | Cross-referencing SQLite rows by hand | In-browser scroller that jumps to the row |
+| **Safety** | Read-only local database | Strictly read-only (zero automated mutations) |
 
 ---
 
-## Installation & Setup
+## Setup
 
 1. Clone this repository:
    ```bash
    git clone https://github.com/mnarla/culler-v2.git
    ```
-2. Open Google Chrome and navigate to `chrome://extensions/`.
-3. Enable **Developer mode** (top-right toggle).
-4. Click **Load unpacked** and select the root directory of `culler-v2`.
-5. Open [open.spotify.com](https://open.spotify.com/) and pin the **Culler** extension to your toolbar.
-6. Open the extension popup, click the settings gear icon, and enter your Gemini API key (stored strictly client-side in your browser).
+2. In Chrome, go to `chrome://extensions/` and turn on **Developer mode** in the top-right corner.
+3. Click **Load unpacked** and select the `culler-v2` directory.
+4. Open [open.spotify.com](https://open.spotify.com/) and open the extension popup.
+5. Click the gear icon to add your Gemini API key (this is stored locally in `chrome.storage.local` and never leaves your machine).
 
 ---
 
 ## Tech Stack
 
-- **Extension Platform**: Chrome Manifest V3 (Service Worker + Content Scripts)
-- **DOM / Page Interception**: Vanilla JS, History API hooks, WebKit DOM Observers
-- **Models**: Google Gemini 1.5 / 3.5 Flash via REST API
-- **Styling**: Spotify-dark responsive design system, JetBrains Mono, Plus Jakarta Sans
+- **Extension:** Chrome Manifest V3 (Service Worker + Content Scripts)
+- **Frontend / Ingestion:** Vanilla JS, MutationObservers, Web History API hooks
+- **Inference:** Google Gemini 3.5 Flash via REST
+- **Styling:** CSS variables, JetBrains Mono, Plus Jakarta Sans
