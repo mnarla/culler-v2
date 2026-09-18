@@ -45,6 +45,9 @@ async function handleMessage(message, sender) {
     case 'CULLER_START_SESSION':
       return onStartSession(message.playlistId, message.playlistName);
 
+    case 'CULLER_PAUSE_SESSION':
+      return onPauseSession();
+
     case 'CULLER_STOP_SESSION':
       return onStopSession();
 
@@ -98,6 +101,7 @@ async function onFetchFullPlaylist(startOffset, totalExpected) {
 async function onStartSession(playlistId, playlistName) {
   const session = {
     isActive: true,
+    isPaused: false,
     playlistId: playlistId || null,
     playlistName: playlistName || 'Active Playlist',
     startTime: Date.now(),
@@ -107,9 +111,19 @@ async function onStartSession(playlistId, playlistName) {
   return { success: true, session };
 }
 
+async function onPauseSession() {
+  const session = await getActiveSession();
+  if (!session || !session.isActive) return { success: false, reason: 'no_active_session' };
+  session.isPaused = !session.isPaused;
+  await setActiveSession(session);
+  console.log(`[Culler Background] Session telemetry ${session.isPaused ? 'paused' : 'resumed'}.`);
+  return { success: true, isPaused: session.isPaused, session };
+}
+
 async function onStopSession() {
   const session = await getActiveSession();
   session.isActive = false;
+  session.isPaused = false;
   await setActiveSession(session);
   return { success: true, session };
 }
@@ -164,6 +178,10 @@ function isTrackInPlaylist(event, playlistTracks) {
 async function onTrackPlaybackEvent(event) {
   const session = await getActiveSession();
   if (!session || !session.isActive) return { success: false, reason: 'no_active_session' };
+  if (session.isPaused) {
+    console.log('[Culler Background] Suppressed playback event: session is paused.');
+    return { success: false, reason: 'session_paused' };
+  }
 
   // 1. Filter out advertisements
   if (isAdvertisementEvent(event)) {

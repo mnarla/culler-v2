@@ -29,6 +29,8 @@ const paginationProgressFill = document.getElementById('pagination-progress-fill
 const statSkipsEl = document.getElementById('stat-skips');
 const statKeepsEl = document.getElementById('stat-keeps');
 const btnToggleSession = document.getElementById('btn-toggle-session');
+const btnPauseSession = document.getElementById('btn-pause-session');
+const sessionStatusBadge = document.getElementById('session-status-badge');
 const btnQuickScan = document.getElementById('btn-quick-scan');
 
 const aiLoading = document.getElementById('ai-loading');
@@ -183,10 +185,31 @@ async function loadSessionState() {
     btnToggleSession.textContent = `✨ Stop & Generate Cull List (${skips} skips, ${keeps} keeps)`;
     btnToggleSession.className = 'btn btn-magic full-width';
     if (btnQuickScan) btnQuickScan.classList.add('hidden');
+
+    if (btnPauseSession) {
+      btnPauseSession.classList.remove('hidden');
+      if (session.isPaused) {
+        btnPauseSession.textContent = '▶️ Resume Session';
+        if (sessionStatusBadge) {
+          sessionStatusBadge.textContent = 'PAUSED';
+          sessionStatusBadge.className = 'status-tag status-paused';
+          sessionStatusBadge.classList.remove('hidden');
+        }
+      } else {
+        btnPauseSession.textContent = '⏸️ Pause Session';
+        if (sessionStatusBadge) {
+          sessionStatusBadge.textContent = 'ACTIVE';
+          sessionStatusBadge.className = 'status-tag status-active';
+          sessionStatusBadge.classList.remove('hidden');
+        }
+      }
+    }
   } else {
     btnToggleSession.textContent = 'Start Culling Session 🎧';
     btnToggleSession.className = 'btn btn-accent full-width';
     if (btnQuickScan) btnQuickScan.classList.remove('hidden');
+    if (btnPauseSession) btnPauseSession.classList.add('hidden');
+    if (sessionStatusBadge) sessionStatusBadge.classList.add('hidden');
   }
 }
 
@@ -280,6 +303,15 @@ function setupEventListeners() {
       });
     }
   });
+
+  // Pause / Resume Session Button
+  if (btnPauseSession) {
+    btnPauseSession.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'CULLER_PAUSE_SESSION' }, () => {
+        loadSessionState();
+      });
+    });
+  }
 
   // Direct Playlist Scan (No Session required)
   if (btnQuickScan) {

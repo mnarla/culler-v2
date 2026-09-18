@@ -127,6 +127,11 @@ body {
   color: var(--accent-green);
 }
 
+.status-paused {
+  background-color: rgba(255, 170, 0, 0.2);
+  color: #ffaa00;
+}
+
 .playlist-title {
   font-size: 15px;
   font-weight: 600;

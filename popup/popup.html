@@ -49,6 +49,7 @@
     <section class="card session-card">
       <div class="card-header">
         <span class="section-label">Session Telemetry</span>
+        <span id="session-status-badge" class="status-tag status-paused hidden">PAUSED</span>
       </div>
       <div class="session-stats">
         <div class="stat-box">
@@ -62,6 +63,7 @@
       </div>
       <div class="session-controls">
         <button id="btn-toggle-session" class="btn btn-accent full-width">Start Culling Session 🎧</button>
+        <button id="btn-pause-session" class="btn btn-secondary full-width hidden" style="margin-top: 6px;">⏸️ Pause Session</button>
         <button id="btn-quick-scan" class="btn btn-secondary full-width" style="margin-top: 6px;">⚡ Scan Playlist Directly</button>
       </div>
       <div id="ai-loading" class="loading-state hidden">
