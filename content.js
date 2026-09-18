@@ -134,10 +134,35 @@ async function scrollToTrack(name, artist, originalIndex) {
   const highlightRow = (row) => {
     row.scrollIntoView({ behavior: 'smooth', block: 'center' });
     row.style.outline = '3px solid #1ed760';
-    row.style.boxShadow = '0 0 20px rgba(30, 215, 96, 0.8)';
+    row.style.boxShadow = '0 0 25px rgba(30, 215, 96, 0.85)';
     row.style.borderRadius = '4px';
     row.style.transition = 'all 0.3s ease-in-out';
+
+    // 1. Simulate mouse hover so Spotify renders action buttons
     row.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+
+    // 2. Open Spotify's native context menu
+    setTimeout(() => {
+      // Strategy A: Find the explicit "More options" button (···) inside this row and click it
+      const moreBtn = row.querySelector('button[data-testid="more-button"], button[aria-label*="More options" i], button[aria-label*="More" i]');
+      if (moreBtn) {
+        moreBtn.click();
+      } else {
+        // Strategy B: Dispatch a native right-click (contextmenu) event on the row
+        const rect = row.getBoundingClientRect();
+        const clientX = rect.left + rect.width * 0.5;
+        const clientY = rect.top + rect.height * 0.5;
+
+        row.dispatchEvent(new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX,
+          clientY,
+          button: 2
+        }));
+      }
+    }, 450);
 
     setTimeout(() => {
       row.style.outline = '';
